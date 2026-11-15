@@ -171,16 +171,26 @@ class GeocodingClient(private val http: Http) {
 class NotesClient(private val http: Http, private val apiBase: String) {
 
     /** Returns the URL of the created note. */
-    suspend fun createNote(place: Place, report: Report): String {
+    data class NoteRef(val id: Long, val url: String)
+
+    suspend fun createNote(place: Place, report: Report): NoteRef {
         val body = http.postForm(
             "$apiBase/notes.json",
             mapOf("lat" to place.lat.toString(), "lon" to place.lon.toString(), "text" to noteText(place, report)),
         )
         val id = Json.parseToJsonElement(body).jsonObject["properties"]?.jsonObject?.get("id")
-            ?.jsonPrimitive?.longOrNull
-        val site = apiBase.removeSuffix("/api/0.6").replace("api.openstreetmap.org", "www.openstreetmap.org")
-        return if (id != null) "$site/note/$id" else site
+            ?.jsonPrimitive?.longOrNull ?: throw NetworkException("OpenStreetMap didn't confirm the note.")
+        return NoteRef(id, "$site/note/$id")
     }
+
+    /** Current state of a note. Notes removed by moderators answer 410 Gone. */
+    suspend fun fetchNote(id: Long): NoteState = try {
+        ReportTracker.parseNote(http.get("$apiBase/notes/$id.json"))
+    } catch (e: NetworkException) {
+        if (e.httpCode == 410 || e.httpCode == 404) NoteState(NoteStatus.HIDDEN, null, null) else throw e
+    }
+
+    private val site = apiBase.removeSuffix("/api/0.6").replace("api.openstreetmap.org", "www.openstreetmap.org")
 
     companion object {
         fun noteText(place: Place, report: Report): String = buildString {

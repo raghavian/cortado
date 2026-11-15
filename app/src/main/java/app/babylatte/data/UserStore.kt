@@ -17,6 +17,7 @@ private val Context.dataStore by preferencesDataStore(name = "babylatte")
 class UserStore(private val context: Context) {
     private val favoritesKey = stringPreferencesKey("favorites_json")
     private val pendingKey = stringPreferencesKey("pending_json")
+    private val reportsKey = stringPreferencesKey("reports_json")
     private val filtersKey = stringSetPreferencesKey("filters")
     private val categoryKey = stringPreferencesKey("category")
     private val cameraKey = stringPreferencesKey("camera")
@@ -47,6 +48,28 @@ class UserStore(private val context: Context) {
         p[cameraKey]?.split(",")?.mapNotNull { it.toDoubleOrNull() }?.takeIf { it.size == 3 }
             ?.let { Triple(it[0], it[1], it[2]) }
     }
+
+    /** Reports this user sent, newest first. */
+    val reports: Flow<List<SubmittedReport>> = context.dataStore.data.map { p -> decodeReports(p) }
+
+    suspend fun addReport(report: SubmittedReport) = editReports { listOf(report) + it }
+
+    suspend fun updateReport(report: SubmittedReport) =
+        editReports { list -> list.map { if (it.noteId == report.noteId) report else it } }
+
+    /** New places that showed up in the real data: their reports are now on the map. */
+    suspend fun markOnMap(pendingPlaceIds: Collection<String>) {
+        if (pendingPlaceIds.isEmpty()) return
+        editReports { list -> list.map { if (it.placeId in pendingPlaceIds) it.copy(onMap = true) else it } }
+    }
+
+    private suspend fun editReports(change: (List<SubmittedReport>) -> List<SubmittedReport>) {
+        context.dataStore.edit { p -> p[reportsKey] = json.encodeToString(change(decodeReports(p))) }
+    }
+
+    private fun decodeReports(p: Preferences): List<SubmittedReport> =
+        p[reportsKey]?.let { runCatching { json.decodeFromString<List<SubmittedReport>>(it) }.getOrNull() }
+            ?: emptyList()
 
     suspend fun toggleFavorite(place: Place) {
         context.dataStore.edit { p ->

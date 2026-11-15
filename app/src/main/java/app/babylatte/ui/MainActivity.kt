@@ -224,7 +224,15 @@ fun MainScreen(vm: MainViewModel) {
                     onAdd = vm::startAdd,
                 )
             } else {
-                Surface(Modifier.fillMaxSize()) {
+                if (tab == Tab.SAVED) Surface(Modifier.fillMaxSize()) {
+                    LaunchedEffect(Unit) { vm.refreshReports() }
+                    SavedTab(
+                        favorites = Filters.sort(state.favorites.values.toList(), state.userLat, state.userLon),
+                        reports = state.reports,
+                        userLat = state.userLat, userLon = state.userLon,
+                        onPlace = vm::select,
+                    )
+                } else Surface(Modifier.fillMaxSize()) {
                     val items = if (tab == Tab.LIST) state.visible
                     else Filters.sort(state.favorites.values.toList(), state.userLat, state.userLon)
                     if (items.isEmpty()) {

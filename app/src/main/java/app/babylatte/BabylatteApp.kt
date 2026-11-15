@@ -6,6 +6,7 @@ import app.babylatte.data.Http
 import app.babylatte.data.NotesClient
 import app.babylatte.data.OverpassClient
 import app.babylatte.data.PlaceCache
+import app.babylatte.data.ReportTracker
 import app.babylatte.data.OfflineData
 import app.babylatte.data.SyncWorker
 import app.babylatte.data.UserStore
@@ -18,6 +19,7 @@ class BabylatteApp : Application() {
     lateinit var store: UserStore
     lateinit var cache: PlaceCache
     lateinit var offline: OfflineData
+    lateinit var reports: ReportTracker
 
     override fun onCreate() {
         super.onCreate()
@@ -35,6 +37,7 @@ class BabylatteApp : Application() {
         store = UserStore(this)
         offline = OfflineData(filesDir.resolve("offline"), http, BuildConfig.SNAPSHOT_URL)
         cache = PlaceCache(filesDir.resolve("places-cache.json"))
+        reports = ReportTracker(store, notes, offline)
         SyncWorker.schedule(this)
     }
 }

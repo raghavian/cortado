@@ -14,7 +14,9 @@ import java.util.concurrent.TimeUnit
 /** Refreshes the offline café data once a day in the background, whenever there's a network. */
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val ok = (applicationContext as BabylatteApp).offline.sync()
+        val app = applicationContext as BabylatteApp
+        val ok = app.offline.sync()
+        runCatching { app.reports.refresh() } // also check what happened to the user's reports
         return if (ok) Result.success() else Result.retry()
     }
 

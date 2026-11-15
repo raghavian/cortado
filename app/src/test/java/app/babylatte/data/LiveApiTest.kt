@@ -20,6 +20,13 @@ class LiveApiTest {
         assertTrue(places.size > 50)
     }
 
+    @Test fun noteStatusFromRealOsm() = runBlocking {
+        assumeTrue(System.getProperty("live") == "true")
+        val s = NotesClient(http, "https://api.openstreetmap.org/api/0.6").fetchNote(5634321)
+        println("Note: $s")
+        assertTrue(s.status == NoteStatus.CLOSED && s.mapperComment != null)
+    }
+
     @Test fun nominatimSearch() = runBlocking {
         assumeTrue(System.getProperty("live") == "true")
         val r = GeocodingClient(http).search("Nørrebro, København")

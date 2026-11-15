@@ -13,6 +13,7 @@ import app.babylatte.data.OfflineStatus
 import app.babylatte.data.Pending
 import app.babylatte.data.Place
 import app.babylatte.data.Report
+import app.babylatte.data.SubmittedReport
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -63,6 +64,7 @@ data class UiState(
     val lastQuery: String = "",
     val offline: OfflineStatus = OfflineStatus(),
     val pending: List<Place> = emptyList(),
+    val reports: List<SubmittedReport> = emptyList(),
     /** Add-a-café flow: placing the pin, then possibly confirming it isn't a duplicate, then the form. */
     val addStep: AddStep = AddStep.None,
 )
@@ -91,12 +93,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val reportState = MutableStateFlow<ReportState>(ReportState.Idle)
 
-    val state: StateFlow<UiState> = combine(core, store.favorites, deps.offline.status, store.pending) { s, favs, offline, pending ->
+    val state: StateFlow<UiState> = combine(core, store.favorites, deps.offline.status, store.pending, store.reports) { s, favs, offline, pending, reports ->
         val resolved = Pending.resolved(pending, s.places)
         val shownPending = pending.filter { it.id !in resolved }
         val all = s.places + shownPending
         val visible = Filters.sort(all.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
-        s.copy(favorites = favs, visible = visible, offline = offline, pending = shownPending)
+        s.copy(favorites = favs, visible = visible, offline = offline, pending = shownPending, reports = reports)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UiState())
 
     /** Saved camera position, or Copenhagen on first launch. */
@@ -112,8 +114,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Once a user-added place shows up in the real data, forget the local pending copy.
         viewModelScope.launch {
             combine(core, store.pending) { s, pending -> Pending.resolved(pending, s.places) }
-                .collect { store.removePending(it) }
+                .collect { resolved ->
+                    store.markOnMap(resolved)
+                    store.removePending(resolved)
+                }
         }
+        refreshReports()
         // First launch downloads offline data; afterwards refresh if it's more than a day old.
         // (SyncWorker also refreshes daily in the background.)
         val age = deps.offline.ageMillis()
@@ -324,7 +330,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         reportState.value = ReportState.Sending
         viewModelScope.launch {
             reportState.value = try {
-                ReportState.Sent(deps.notes.createNote(place, report))
+                val note = deps.notes.createNote(place, report)
+                store.addReport(
+                    SubmittedReport(
+                        noteId = note.id, noteUrl = note.url, placeId = place.id, placeName = place.name,
+                        isNewPlace = false, createdAt = System.currentTimeMillis(), reportedTags = report.facilityTags(),
+                    ),
+                )
+                ReportState.Sent(note.url)
             } catch (e: Exception) {
                 ReportState.Failed(e.message ?: "Could not send the report.")
             }
@@ -373,9 +386,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         reportState.value = ReportState.Sending
         viewModelScope.launch {
             reportState.value = try {
-                val url = deps.notes.createNote(place, report)
-                store.addPending(place.copy(tags = place.tags + (Place.TAG_NOTE_URL to url)))
-                ReportState.Sent(url)
+                val note = deps.notes.createNote(place, report)
+                store.addPending(place.copy(tags = place.tags + (Place.TAG_NOTE_URL to note.url)))
+                store.addReport(
+                    SubmittedReport(
+                        noteId = note.id, noteUrl = note.url, placeId = place.id, placeName = place.name,
+                        isNewPlace = true, createdAt = System.currentTimeMillis(), reportedTags = report.facilityTags(),
+                    ),
+                )
+                ReportState.Sent(note.url)
             } catch (e: Exception) {
                 ReportState.Failed(e.message ?: "Could not send.")
             }
@@ -390,6 +409,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun removePending(place: Place) {
         select(null)
         viewModelScope.launch { store.removePending(listOf(place.id)) }
+    }
+
+    /** Re-checks the status of the user's reports (rate-limited inside the tracker). */
+    fun refreshReports() {
+        viewModelScope.launch { runCatching { deps.reports.refresh() } }
     }
 
     fun resetReport() {

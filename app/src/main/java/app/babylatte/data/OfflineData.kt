@@ -74,6 +74,9 @@ class OfflineData(private val dir: File, private val http: Http, private val bas
         }
     }
 
+    /** A single offline place by OSM id (e.g. "node/123"), or null. */
+    suspend fun findById(id: String): Place? = loadPlaces()?.firstOrNull { it.id == id }
+
     /** All offline places whose name contains [query] (accent- and case-insensitive). */
     suspend fun searchByName(query: String): List<Place> {
         val q = Pending.normalize(query)
