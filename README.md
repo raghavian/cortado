@@ -38,6 +38,21 @@ app/src/main/java/app/cortado/
 | Accessible toilet | `toilets:wheelchair` |
 | "Baby friendly" | at least one of changing table / highchair / play corner / breastfeeding, or `stroller=yes` |
 
+## Data: offline by default, refreshed daily
+
+The public Overpass servers are often overloaded (30–60 s per request), so the app keeps its own copy of the data on the phone:
+
+1. **Daily snapshot.** `.github/workflows/data.yml` runs `scripts/build_snapshot.py` every night. It downloads all cafés, restaurants, ice-cream and fast-food places for the regions in `scripts/regions.json` (currently Denmark: about 13,500 places, **0.5 MB** compressed), keeps only the tags the app uses and publishes them to GitHub Pages:
+   `https://raghavian.github.io/cortado/v1/index.json` and `.../v1/regions/dk.json.gz`
+2. **Offline on the phone.** On first launch the app downloads the whole region file, then searches and filters it locally: instant and with no signal needed. `SyncWorker` (WorkManager) re-checks once a day and only downloads again when a newer snapshot has been published.
+3. **Live Overpass fallback** for areas outside the downloaded regions (e.g. Malmö). The last 12 such areas are cached on the device.
+
+To cover another country, add it to `scripts/regions.json`. (Every phone currently downloads every region. Once there are many countries, the app should pick regions by location.) Snapshot data is © OpenStreetMap contributors (ODbL), and the attribution is included in every file.
+
+**One-time setup:** in the GitHub repository go to *Settings → Pages → Build and deployment → Source* and choose **GitHub Actions**. Then run the workflow once from the *Actions* tab ("Publish café data" → *Run workflow*).
+
+The map pictures themselves still load online (and are cached as you browse). See "Ideas for later" for a fully offline map.
+
 ## Build
 
 Requires JDK 17+ and the Android SDK (`local.properties` → `sdk.dir=...`).
@@ -78,7 +93,7 @@ The **debug** build sends reports to the OSM *sandbox* (`master.apis.dev.openstr
 - **OSM Notes:** reports are public and anonymous. The form asks users to report only what they saw.
 
 ## Ideas for later
-- Cache results offline (Room)
+- Fully offline map: switch to MapLibre with a self-hosted PMTiles file (~30–60 MB for Copenhagen)
 - Marker clustering when zoomed out
 - Show the user's own pending reports on the map until OSM is updated
 - A Danish translation (`res/values-da/strings.xml`; UI strings would first need moving into resources)

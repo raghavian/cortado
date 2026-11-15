@@ -101,6 +101,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private const val MAX_PINS = 700
+
 private enum class Tab(val label: String) { MAP("Map"), LIST("List"), SAVED("Saved") }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,7 +138,14 @@ fun MainScreen(vm: MainViewModel) {
                 FilterRow(state.filters, state.category, vm::toggleFilter, vm::clearFilters, vm::setCategory)
                 if (state.loading) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
-                    if (state.slow) {
+                    if (state.offline.syncing && state.offline.regions.isEmpty()) {
+                        Text(
+                            "Downloading café data for offline use\u2026",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        )
+                    } else if (state.slow) {
                         Text(
                             "OpenStreetMap servers are busy, still loading\u2026",
                             style = MaterialTheme.typography.labelMedium,
@@ -181,7 +190,8 @@ fun MainScreen(vm: MainViewModel) {
             // The map stays composed so it keeps its position while switching tabs.
             initialCamera?.let { cam ->
                 MapPane(
-                    places = state.visible,
+                    // Most family-friendly first, so capping keeps the useful pins.
+                    places = state.visible.take(MAX_PINS),
                     selectedId = state.selected?.id,
                     initialCamera = cam,
                     commands = vm.commands,
@@ -269,7 +279,7 @@ fun MainScreen(vm: MainViewModel) {
         )
     }
 
-    if (showAbout) AboutDialog { showAbout = false }
+    if (showAbout) AboutDialog(state.offline) { showAbout = false }
 }
 
 @Composable
@@ -393,7 +403,7 @@ private fun EmptyState(text: String) {
 }
 
 @Composable
-private fun AboutDialog(onDismiss: () -> Unit) {
+private fun AboutDialog(offline: app.cortado.data.OfflineStatus, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Cortado ${BuildConfig.VERSION_NAME}") },
@@ -406,9 +416,17 @@ private fun AboutDialog(onDismiss: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Privacy: no account, no tracking, no ads. Your GPS location never leaves your phone; it is only " +
-                        "used to centre the map. The map area you view is sent to OpenStreetMap services to load " +
-                        "map tiles and cafés. Saved cafés and filters stay on your phone. Reports you send are " +
+                        "used to centre the map. Café data is downloaded daily from GitHub; the map area you view is " +
+                        "sent to OpenStreetMap services to load map tiles (and cafés outside the offline data). Saved cafés and filters stay on your phone. Reports you send are " +
                         "posted anonymously and publicly to OpenStreetMap.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (offline.regions.isEmpty()) "Offline data: not downloaded yet."
+                    else "Offline data: ${offline.placeCount} places in " +
+                        offline.regions.joinToString { it.name } + ", updated " +
+                        offline.regions.first().generated.take(10) + ". Refreshed daily.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.height(8.dp))

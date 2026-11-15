@@ -23,12 +23,15 @@ class NetworkException(message: String, cause: Throwable? = null, val httpCode: 
 /** Minimal HTTP helper: every OSM service requires an identifying User-Agent. */
 class Http(private val userAgent: String) {
 
-    suspend fun get(url: String): String = request(url, "GET", null)
+    suspend fun get(url: String): String = request(url, "GET", null).toString(Charsets.UTF_8)
+
+    suspend fun getBytes(url: String): ByteArray = request(url, "GET", null)
 
     suspend fun postForm(url: String, form: Map<String, String>): String =
         request(url, "POST", form.entries.joinToString("&") { "${enc(it.key)}=${enc(it.value)}" })
+            .toString(Charsets.UTF_8)
 
-    private suspend fun request(url: String, method: String, body: String?): String = withContext(Dispatchers.IO) {
+    private suspend fun request(url: String, method: String, body: String?): ByteArray = withContext(Dispatchers.IO) {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 15_000
@@ -50,7 +53,7 @@ class Http(private val userAgent: String) {
                 val err = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 throw NetworkException("HTTP $code ${err.take(200)}", httpCode = code)
             }
-            conn.inputStream.bufferedReader().use { it.readText() }
+            conn.inputStream.use { it.readBytes() }
         } catch (e: IOException) {
             throw e as? NetworkException ?: NetworkException("Network error: ${e.message}", e)
         } finally {

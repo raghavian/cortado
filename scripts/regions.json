@@ -1,0 +1,6 @@
+{
+  "_comment": "Regions published as static snapshots. 'area' is an Overpass area filter. Add more countries here.",
+  "regions": [
+    { "id": "dk", "name": "Denmark", "area": "area[\"ISO3166-1\"=\"DK\"][admin_level=2]" }
+  ]
+}

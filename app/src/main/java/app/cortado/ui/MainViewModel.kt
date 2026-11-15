@@ -8,6 +8,7 @@ import app.cortado.data.BoundingBox
 import app.cortado.data.Category
 import app.cortado.data.Filters
 import app.cortado.data.GeoResult
+import app.cortado.data.OfflineStatus
 import app.cortado.data.Place
 import app.cortado.data.Report
 import kotlinx.coroutines.Job
@@ -53,6 +54,7 @@ data class UiState(
     val userLat: Double? = null,
     val userLon: Double? = null,
     val searchResults: List<GeoResult> = emptyList(),
+    val offline: OfflineStatus = OfflineStatus(),
 )
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -69,9 +71,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val reportState = MutableStateFlow<ReportState>(ReportState.Idle)
 
-    val state: StateFlow<UiState> = combine(core, store.favorites) { s, favs ->
+    val state: StateFlow<UiState> = combine(core, store.favorites, deps.offline.status) { s, favs, offline ->
         val visible = Filters.sort(s.places.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
-        s.copy(favorites = favs, visible = visible)
+        s.copy(favorites = favs, visible = visible, offline = offline)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UiState())
 
     /** Saved camera position, or Copenhagen on first launch. */
@@ -83,6 +85,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val filters = store.filters.first()
             val category = store.category.first()
             core.update { it.copy(filters = filters, category = category) }
+        }
+        // First launch downloads offline data; afterwards refresh if it's more than a day old.
+        // (SyncWorker also refreshes daily in the background.)
+        val age = deps.offline.ageMillis()
+        if (age == null || age > DAY_MS) {
+            val hadData = deps.offline.hasData
+            viewModelScope.launch {
+                if (deps.offline.sync() && !hadData) {
+                    lastBox = null
+                    loadArea()
+                }
+            }
         }
     }
 
@@ -110,6 +124,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         loadJob = viewModelScope.launch {
             core.update { it.copy(error = null, info = null, areaChanged = false, slow = false) }
 
+            // Offline data on the phone: instant, no network needed.
+            if (!deps.offline.hasData && deps.offline.status.value.syncing) {
+                core.update { it.copy(loading = true) }
+                deps.offline.status.first { !it.syncing } // first-launch download in progress
+                core.update { it.copy(loading = false) }
+            }
+            deps.offline.query(box, category)?.let { places ->
+                lastBox = box
+                core.update {
+                    it.copy(places = places, info = if (places.isEmpty()) "No cafés found in this area." else null)
+                }
+                return@launch
+            }
+
             // Show saved results straight away; skip the network if they are recent enough.
             val cached = deps.cache.find(box, category)
             if (cached != null) {
@@ -124,6 +152,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 core.update { it.copy(slow = true) }
             }
             try {
+                // Outside the offline regions: live Overpass.
                 val places = deps.overpass.fetch(box, category)
                 lastBox = box
                 deps.cache.put(box, category, places)
@@ -233,5 +262,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         const val MAX_AREA_DEG2 = 0.016
         private const val MIN_FIT_AREA_DEG2 = 0.0002
         private const val CACHE_FRESH_MS = 12 * 60 * 60 * 1000L
+        private const val DAY_MS = 24 * 60 * 60 * 1000L
     }
 }
