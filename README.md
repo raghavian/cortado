@@ -80,11 +80,12 @@ The **debug** build sends reports to the OSM *sandbox* (`master.apis.dev.openstr
    keyPassword=...
    ```
 2. **Build the bundle:** `./gradlew bundleRelease` → `app/build/outputs/bundle/release/app-release.aab`
-3. **Play Console** (https://play.google.com/console, one-time $25 fee plus identity verification):
-   - Create the app, enrol in Play App Signing, and upload the `.aab` to a testing track.
-   - New *personal* developer accounts must run a **closed test with at least 12 testers for 14 days** before production access is unlocked.
-   - Fill in the store listing, data safety, content rating and target audience using `store/listing.md`.
-   - The privacy policy must be at a public URL. Host `PRIVACY.md` (e.g. GitHub Pages) and add your contact email to it first.
+3. **Play Console** (https://play.google.com/console), published by **SAINTS Consultancy** (organisation account):
+   - Needs the company's **D-U-N-S number**; name and address must match the D-U-N-S record. The fee is a one-time $25, plus verification of the company's email and phone.
+   - Organisation accounts are exempt from the "12 testers for 14 days" closed-test rule that applies to new personal accounts. An internal test first is still recommended.
+   - Under the EU Digital Services Act, a company is normally a "trader": Play shows its address, email and phone on the store page.
+   - Create the app, enrol in Play App Signing and upload the `.aab`. Fill in the store listing, data safety, content rating and target audience (18+) using `store/listing.md`.
+   - Privacy policy URL: `https://raghavian.github.io/cortado/privacy.html` (rendered from `PRIVACY.md` by the data workflow).
 4. Bump `versionCode` in `app/build.gradle.kts` for every upload.
 
 ## Before going big: usage policies

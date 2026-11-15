@@ -33,12 +33,13 @@ Map data © OpenStreetMap contributors.
 
 **Category:** Maps & Navigation (or Parenting)
 **Tags:** parenting, cafés, accessibility, maps
-**Contact email:** <required>
-**Privacy policy URL:** <host PRIVACY.md somewhere public, e.g. GitHub Pages>
+**Developer name:** SAINTS Consultancy
+**Contact email:** <required, shown publicly>
+**Privacy policy URL:** https://raghavian.github.io/cortado/privacy.html
 
 ## Required graphics
 - [x] App icon 512×512: `store/icon-512.png`
-- [ ] Feature graphic 1024×500
+- [x] Feature graphic 1024×500: `store/feature-graphic.png`
 - [ ] 2–8 phone screenshots (take them on a real device or emulator)
 
 ## Data safety form answers

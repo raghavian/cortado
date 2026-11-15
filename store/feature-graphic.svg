@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <rect width="1024" height="500" fill="#F6EBDD"/>
+  <!-- soft map-pin dots in the background -->
+  <g>
+    <circle cx="640" cy="80" r="14" fill="#D1D5C3"/><circle cx="760" cy="140" r="10" fill="#EDD8B6"/>
+    <circle cx="900" cy="70" r="12" fill="#D1D5C3"/><circle cx="980" cy="190" r="9" fill="#E1D7CB"/>
+    <circle cx="700" cy="430" r="11" fill="#EDD8B6"/><circle cx="860" cy="440" r="14" fill="#D1D5C3"/>
+    <circle cx="960" cy="380" r="10" fill="#D1D5C3"/><circle cx="560" cy="460" r="9" fill="#E1D7CB"/>
+  </g>
+  <!-- cup icon (same artwork as the app icon), scaled -->
+  <g transform="translate(40,32) scale(4.1)">
+    <path fill="none" stroke="#3E7D5A" stroke-width="3" stroke-linecap="round" d="M44,36c-3,-4 3,-6 0,-10M58,36c-3,-4 3,-6 0,-10"/>
+    <path fill="#5B3A29" d="M28,74h48a4,4 0,0 1,0 6h-48a4,4 0,0 1,0 -6z"/>
+    <path fill="#5B3A29" d="M32,42h38v16a16,16 0,0 1,-16 16h-6a16,16 0,0 1,-16 -16z"/>
+    <path fill="none" stroke="#5B3A29" stroke-width="5" d="M70,47a7,7 0,0 1,0 14"/>
+    <circle cx="51" cy="57.5" r="11.5" fill="#FFD9A8"/>
+    <path fill="none" stroke="#5B3A29" stroke-width="1.6" stroke-linecap="round" d="M50.6,50.6c-2.4,-0.4 -2.6,-3.6 0,-3.8c2,-0.1 2.2,2.4 0.4,2.6"/>
+    <circle cx="46.6" cy="56" r="1.5" fill="#3A2216"/><circle cx="55.4" cy="56" r="1.5" fill="#3A2216"/>
+    <circle cx="44.6" cy="60.2" r="1.9" fill="#F4A09A"/><circle cx="57.4" cy="60.2" r="1.9" fill="#F4A09A"/>
+    <path fill="none" stroke="#3A2216" stroke-width="1.4" stroke-linecap="round" d="M48.2,61.4q2.8,2.6 5.6,0"/>
+  </g>
+  <text x="470" y="235" font-family="Comfortaa" font-weight="bold" font-size="92" fill="#5B3A29">babylatte</text>
+  <text x="474" y="300" font-family="Lato" font-size="34" fill="#5B3A29">Baby- &amp; pram-friendly cafés</text>
+  <text x="474" y="345" font-family="Lato" font-size="26" fill="#3E7D5A">Changing tables · step-free · highchairs</text>
+</svg>
