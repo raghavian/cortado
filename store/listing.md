@@ -1,12 +1,12 @@
 # Google Play store listing (draft)
 
-**App name (30 chars max):** Cortado: Baby-Friendly Cafés
+**App name (30 chars max):** babylatte: Baby-Friendly Cafés
 
 **Short description (80 chars max):**
 Find pram-friendly cafés with changing tables, highchairs & step-free access.
 
 **Full description:**
-Out with the pram and need a coffee? Cortado shows you which cafés near you are ready for little ones.
+Out with the pram and need a coffee? babylatte shows you which cafés near you are ready for little ones.
 
 🍼 Filter by what matters
 • Baby friendly

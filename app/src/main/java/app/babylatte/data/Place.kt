@@ -1,4 +1,4 @@
-package app.cortado.data
+package app.babylatte.data
 
 import kotlinx.serialization.Serializable
 
@@ -52,4 +52,13 @@ data class Place(
     val website: String? get() = tags["website"] ?: tags["contact:website"]
     val phone: String? get() = tags["phone"] ?: tags["contact:phone"]
     val osmUrl: String get() = "https://www.openstreetmap.org/$id"
+
+    /** Added by this user and waiting for OpenStreetMap volunteers; stored only on this phone. */
+    val isPending: Boolean get() = id.startsWith(PENDING_PREFIX)
+    val pendingNoteUrl: String? get() = tags[TAG_NOTE_URL]
+
+    companion object {
+        const val PENDING_PREFIX = "local/"
+        const val TAG_NOTE_URL = "babylatte:note"
+    }
 }

@@ -1,4 +1,4 @@
-package app.cortado.data
+package app.babylatte.data
 
 import kotlinx.coroutines.runBlocking
 import org.junit.After

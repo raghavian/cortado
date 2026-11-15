@@ -1,8 +1,8 @@
-# Cortado – Privacy Policy
+# babylatte – Privacy Policy
 
 _Last updated: 14 November 2026_
 
-Cortado helps parents find pram- and baby-friendly cafés. It has no accounts, no ads, no analytics and no tracking.
+babylatte helps parents find pram- and baby-friendly cafés. It has no accounts, no ads, no analytics and no tracking.
 
 ## What stays on your device
 - **Your location.** If you allow location access, the app uses it only to centre the map and sort cafés by distance. Your GPS position is never sent to us or anyone else.
@@ -25,7 +25,7 @@ Like any web server, these services can see your IP address. Their privacy polic
 Reports are posted **anonymously and publicly** as OpenStreetMap notes under the Open Database License. Please don't put personal information in your comments. Notes can be closed by OpenStreetMap volunteers, but they stay visible in the public history.
 
 ## Children
-Cortado is made for parents, not for children, and doesn't knowingly collect data from anyone.
+babylatte is made for parents, not for children, and doesn't knowingly collect data from anyone.
 
 ## Contact
 Questions: <ADD YOUR CONTACT EMAIL BEFORE PUBLISHING>

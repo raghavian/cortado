@@ -1,4 +1,4 @@
-package app.cortado.ui.theme
+package app.babylatte.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +40,6 @@ private val Dark = darkColorScheme(
 )
 
 @Composable
-fun CortadoTheme(content: @Composable () -> Unit) {
+fun BabylatteTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
 }

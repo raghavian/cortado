@@ -1,16 +1,18 @@
-package app.cortado.ui
+package app.babylatte.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import app.cortado.CortadoApp
-import app.cortado.data.BoundingBox
-import app.cortado.data.Category
-import app.cortado.data.Filters
-import app.cortado.data.GeoResult
-import app.cortado.data.OfflineStatus
-import app.cortado.data.Place
-import app.cortado.data.Report
+import app.babylatte.BabylatteApp
+import app.babylatte.data.BoundingBox
+import app.babylatte.data.Category
+import app.babylatte.data.Filters
+import app.babylatte.data.GeoResult
+import app.babylatte.data.NewPlace
+import app.babylatte.data.OfflineStatus
+import app.babylatte.data.Pending
+import app.babylatte.data.Place
+import app.babylatte.data.Report
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -28,6 +30,8 @@ import kotlinx.coroutines.launch
 sealed interface MapCommand {
     data class MoveTo(val lat: Double, val lon: Double, val zoom: Double) : MapCommand
     data class Fit(val bbox: BoundingBox) : MapCommand
+    /** Zoom in on a place and keep it in the top part of the screen, above the details sheet. */
+    data class Focus(val lat: Double, val lon: Double) : MapCommand
     data object LocateMe : MapCommand
 }
 
@@ -54,16 +58,31 @@ data class UiState(
     val userLat: Double? = null,
     val userLon: Double? = null,
     val searchResults: List<GeoResult> = emptyList(),
+    /** Cafés whose name matches the search, shown above the area results. */
+    val placeResults: List<Place> = emptyList(),
+    val lastQuery: String = "",
     val offline: OfflineStatus = OfflineStatus(),
+    val pending: List<Place> = emptyList(),
+    /** Add-a-café flow: placing the pin, then possibly confirming it isn't a duplicate, then the form. */
+    val addStep: AddStep = AddStep.None,
 )
 
+sealed interface AddStep {
+    data object None : AddStep
+    data object Placing : AddStep
+    data class CheckDuplicates(val lat: Double, val lon: Double, val nearby: List<Place>) : AddStep
+    data class Form(val lat: Double, val lon: Double) : AddStep
+}
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
-    private val deps = app as CortadoApp
+    private val deps = app as BabylatteApp
     private val store = deps.store
 
     private val core = MutableStateFlow(UiState())
     private var lastBox: BoundingBox? = null
     private var currentBox: BoundingBox? = null
+    private var centerLat = 0.0
+    private var centerLon = 0.0
     private var loadJob: Job? = null
 
     private val _commands = Channel<MapCommand>(Channel.BUFFERED)
@@ -71,9 +90,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val reportState = MutableStateFlow<ReportState>(ReportState.Idle)
 
-    val state: StateFlow<UiState> = combine(core, store.favorites, deps.offline.status) { s, favs, offline ->
-        val visible = Filters.sort(s.places.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
-        s.copy(favorites = favs, visible = visible, offline = offline)
+    val state: StateFlow<UiState> = combine(core, store.favorites, deps.offline.status, store.pending) { s, favs, offline, pending ->
+        val resolved = Pending.resolved(pending, s.places)
+        val shownPending = pending.filter { it.id !in resolved }
+        val all = s.places + shownPending
+        val visible = Filters.sort(all.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
+        s.copy(favorites = favs, visible = visible, offline = offline, pending = shownPending)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UiState())
 
     /** Saved camera position, or Copenhagen on first launch. */
@@ -85,6 +107,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val filters = store.filters.first()
             val category = store.category.first()
             core.update { it.copy(filters = filters, category = category) }
+        }
+        // Once a user-added place shows up in the real data, forget the local pending copy.
+        viewModelScope.launch {
+            combine(core, store.pending) { s, pending -> Pending.resolved(pending, s.places) }
+                .collect { store.removePending(it) }
         }
         // First launch downloads offline data; afterwards refresh if it's more than a day old.
         // (SyncWorker also refreshes daily in the background.)
@@ -103,6 +130,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Called by the map whenever the visible area settles. */
     fun onViewportChanged(box: BoundingBox, centerLat: Double, centerLon: Double, zoom: Double) {
         currentBox = box
+        this.centerLat = centerLat
+        this.centerLon = centerLon
         viewModelScope.launch { store.setCamera(centerLat, centerLon, zoom) }
         val last = lastBox
         if (last == null) {
@@ -201,14 +230,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun locateMe() = _commands.trySend(MapCommand.LocateMe)
 
     fun showOnMap(place: Place) {
-        _commands.trySend(MapCommand.MoveTo(place.lat, place.lon, 17.5))
+        _commands.trySend(MapCommand.Focus(place.lat, place.lon))
         select(place)
     }
 
     fun dismissMessage() = core.update { it.copy(error = null, info = null) }
 
+    /**
+     * Search box: café names first (offline data, loaded areas and your pending places), then
+     * cities / neighbourhoods / addresses via Nominatim.
+     */
     fun search(query: String) {
         if (query.isBlank()) return
+        viewModelScope.launch {
+            val q = Pending.normalize(query)
+            val refLat = state.value.userLat ?: centerLat
+            val refLon = state.value.userLon ?: centerLon
+            val matches = (deps.offline.searchByName(query) + state.value.places + state.value.pending)
+                .distinctBy { it.id }
+                .filter { Pending.normalize(it.name).contains(q) }
+                .sortedWith(
+                    compareByDescending<Place> { Pending.normalize(it.name) == q }
+                        .thenBy { Filters.distanceMeters(refLat, refLon, it.lat, it.lon) },
+                )
+            when {
+                matches.size == 1 -> { showOnMap(matches.first()); return@launch }
+                matches.isNotEmpty() -> {
+                    core.update { it.copy(placeResults = matches.take(10), lastQuery = query.trim()) }
+                    return@launch
+                }
+            }
+            searchLocation(query)
+        }
+    }
+
+    /** Search only cities / neighbourhoods / addresses (also offered from the results dialog). */
+    fun searchLocation(query: String) {
+        core.update { it.copy(placeResults = emptyList()) }
         viewModelScope.launch {
             try {
                 val results = deps.geocoding.search(query.trim())
@@ -233,7 +291,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         lastBox = null // force a fresh load once the map settles
     }
 
-    fun clearSearchResults() = core.update { it.copy(searchResults = emptyList()) }
+    fun clearSearchResults() = core.update { it.copy(searchResults = emptyList(), placeResults = emptyList()) }
+
+    fun pickSearchResult(place: Place) {
+        core.update { it.copy(placeResults = emptyList()) }
+        showOnMap(place)
+    }
 
     fun sendReport(place: Place, report: Report) {
         reportState.value = ReportState.Sending
@@ -244,6 +307,67 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ReportState.Failed(e.message ?: "Could not send the report.")
             }
         }
+    }
+
+    // --- Adding a missing café -------------------------------------------------------------
+
+    fun startAdd() {
+        select(null)
+        core.update { it.copy(addStep = AddStep.Placing) }
+    }
+
+    fun cancelAdd() = core.update { it.copy(addStep = AddStep.None) }
+
+    /** The pin is where the user wants it (map centre). Check for duplicates first. */
+    fun confirmLocation() {
+        val lat = centerLat
+        val lon = centerLon
+        val nearby = Pending.nearby(state.value.places + state.value.pending, lat, lon)
+        core.update {
+            it.copy(addStep = if (nearby.isEmpty()) AddStep.Form(lat, lon) else AddStep.CheckDuplicates(lat, lon, nearby))
+        }
+    }
+
+    fun notADuplicate() {
+        val step = core.value.addStep as? AddStep.CheckDuplicates ?: return
+        core.update { it.copy(addStep = AddStep.Form(step.lat, step.lon)) }
+    }
+
+    /** "It's this one": open the existing place instead, so the user can add info to it. */
+    fun pickExisting(place: Place) {
+        core.update { it.copy(addStep = AddStep.None) }
+        select(place)
+    }
+
+    fun sendNewPlace(lat: Double, lon: Double, report: Report) {
+        val newPlace: NewPlace = report.newPlace ?: return
+        val place = Place(
+            id = Place.PENDING_PREFIX + java.util.UUID.randomUUID(),
+            name = newPlace.name.trim(),
+            lat = lat, lon = lon,
+            category = newPlace.amenity,
+            tags = mapOf("name" to newPlace.name.trim(), "amenity" to newPlace.amenity) + report.facilityTags(),
+        )
+        reportState.value = ReportState.Sending
+        viewModelScope.launch {
+            reportState.value = try {
+                val url = deps.notes.createNote(place, report)
+                store.addPending(place.copy(tags = place.tags + (Place.TAG_NOTE_URL to url)))
+                ReportState.Sent(url)
+            } catch (e: Exception) {
+                ReportState.Failed(e.message ?: "Could not send.")
+            }
+        }
+    }
+
+    fun finishAdd() {
+        core.update { it.copy(addStep = AddStep.None) }
+        resetReport()
+    }
+
+    fun removePending(place: Place) {
+        select(null)
+        viewModelScope.launch { store.removePending(listOf(place.id)) }
     }
 
     fun resetReport() {

@@ -1,4 +1,4 @@
-package app.cortado.data
+package app.babylatte.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,6 +72,14 @@ class OfflineData(private val dir: File, private val http: Http, private val bas
         return all.filter {
             it.lat in box.south..box.north && it.lon in box.west..box.east && it.category in category.osmAmenities
         }
+    }
+
+    /** All offline places whose name contains [query] (accent- and case-insensitive). */
+    suspend fun searchByName(query: String): List<Place> {
+        val q = Pending.normalize(query)
+        if (q.length < 2) return emptyList()
+        val all = loadPlaces() ?: return emptyList()
+        return withContext(Dispatchers.Default) { all.filter { Pending.normalize(it.name).contains(q) } }
     }
 
     /** Hours since the oldest region was generated, or null if nothing is downloaded. */

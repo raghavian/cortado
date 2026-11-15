@@ -1,4 +1,4 @@
-package app.cortado.data
+package app.babylatte.data
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -7,7 +7,7 @@ import org.junit.Test
 
 /** Hits the real Overpass/Nominatim servers. Run with: ./gradlew testDebugUnitTest -Plive */
 class LiveApiTest {
-    private val http = Http("Cortado-tests/1.0")
+    private val http = Http("babylatte-tests/1.0")
 
     @Test fun overpassCopenhagen() = runBlocking {
         assumeTrue(System.getProperty("live") == "true")

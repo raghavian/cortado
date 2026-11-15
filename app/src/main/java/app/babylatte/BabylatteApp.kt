@@ -1,17 +1,17 @@
-package app.cortado
+package app.babylatte
 
 import android.app.Application
-import app.cortado.data.GeocodingClient
-import app.cortado.data.Http
-import app.cortado.data.NotesClient
-import app.cortado.data.OverpassClient
-import app.cortado.data.PlaceCache
-import app.cortado.data.OfflineData
-import app.cortado.data.SyncWorker
-import app.cortado.data.UserStore
+import app.babylatte.data.GeocodingClient
+import app.babylatte.data.Http
+import app.babylatte.data.NotesClient
+import app.babylatte.data.OverpassClient
+import app.babylatte.data.PlaceCache
+import app.babylatte.data.OfflineData
+import app.babylatte.data.SyncWorker
+import app.babylatte.data.UserStore
 import org.osmdroid.config.Configuration
 
-class CortadoApp : Application() {
+class BabylatteApp : Application() {
     lateinit var overpass: OverpassClient
     lateinit var geocoding: GeocodingClient
     lateinit var notes: NotesClient
@@ -21,7 +21,7 @@ class CortadoApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        val userAgent = "Cortado/${BuildConfig.VERSION_NAME} (Android; ${BuildConfig.APPLICATION_ID})"
+        val userAgent = "babylatte/${BuildConfig.VERSION_NAME} (Android; ${BuildConfig.APPLICATION_ID})"
         // OSM tile servers require a unique, identifying user agent.
         Configuration.getInstance().apply {
             this.userAgentValue = userAgent

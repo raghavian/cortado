@@ -14,11 +14,11 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "app.cortado"
+    namespace = "app.babylatte"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.cortado"
+        applicationId = "app.babylatte"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

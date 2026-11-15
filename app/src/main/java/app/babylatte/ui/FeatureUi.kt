@@ -1,4 +1,4 @@
-package app.cortado.ui
+package app.babylatte.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessible
@@ -12,13 +12,13 @@ import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material.icons.filled.Wc
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import app.cortado.data.Feature
-import app.cortado.data.Filters
-import app.cortado.data.Status
-import app.cortado.ui.theme.Clay
-import app.cortado.ui.theme.Fog
-import app.cortado.ui.theme.Honey
-import app.cortado.ui.theme.Sage
+import app.babylatte.data.Feature
+import app.babylatte.data.Filters
+import app.babylatte.data.Status
+import app.babylatte.ui.theme.Clay
+import app.babylatte.ui.theme.Fog
+import app.babylatte.ui.theme.Honey
+import app.babylatte.ui.theme.Sage
 
 fun Feature.icon(): ImageVector = when (this) {
     Feature.CHANGING_TABLE -> Icons.Filled.BabyChangingStation

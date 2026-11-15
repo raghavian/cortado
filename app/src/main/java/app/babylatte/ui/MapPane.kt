@@ -1,4 +1,4 @@
-package app.cortado.ui
+package app.babylatte.ui
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -19,14 +19,14 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import app.cortado.data.BoundingBox
-import app.cortado.data.Feature
-import app.cortado.data.Place
-import app.cortado.data.Status
-import app.cortado.ui.theme.Espresso
-import app.cortado.ui.theme.Fog
-import app.cortado.ui.theme.Honey
-import app.cortado.ui.theme.Sage
+import app.babylatte.data.BoundingBox
+import app.babylatte.data.Feature
+import app.babylatte.data.Place
+import app.babylatte.data.Status
+import app.babylatte.ui.theme.Espresso
+import app.babylatte.ui.theme.Fog
+import app.babylatte.ui.theme.Honey
+import app.babylatte.ui.theme.Sage
 import kotlinx.coroutines.flow.Flow
 import org.osmdroid.events.DelayedMapListener
 import org.osmdroid.events.MapListener
@@ -53,7 +53,7 @@ private class MapHolder(context: Context) {
 @Composable
 fun MapPane(
     places: List<Place>,
-    selectedId: String?,
+    selected: Place?,
     initialCamera: Triple<Double, Double, Double>,
     commands: Flow<MapCommand>,
     hasLocationPermission: Boolean,
@@ -143,6 +143,12 @@ fun MapPane(
         commands.collect { cmd ->
             when (cmd) {
                 is MapCommand.MoveTo -> holder.map.controller.animateTo(GeoPoint(cmd.lat, cmd.lon), cmd.zoom, 800L)
+                is MapCommand.Focus -> holder.map.apply {
+                    controller.setZoom(17.5)
+                    controller.setCenter(GeoPoint(cmd.lat, cmd.lon))
+                    // Shift the view so the pin sits ~quarter-height above centre, clear of the sheet.
+                    post { scrollBy(0, height / 4) }
+                }
                 is MapCommand.Fit -> holder.map.zoomToBoundingBox(
                     org.osmdroid.util.BoundingBox(cmd.bbox.north, cmd.bbox.east, cmd.bbox.south, cmd.bbox.west),
                     true, 48,
@@ -165,12 +171,17 @@ fun MapPane(
         modifier = modifier,
         update = { map ->
             holder.markers.items.clear()
-            // Draw unknowns first so the family-friendly pins sit on top.
-            places.sortedBy { it.babyScore }.forEach { place ->
+            // Draw unknowns first so the family-friendly pins sit on top, and the selected place
+            // last of all (added even if the filters would hide it). Other pins fade back while
+            // something is selected so the chosen one stands out.
+            val others = places.filter { it.id != selected?.id }.sortedBy { it.babyScore }
+            (others + listOfNotNull(selected)).forEach { place ->
+                val isSelected = place.id == selected?.id
                 holder.markers.add(Marker(map).apply {
                     position = GeoPoint(place.lat, place.lon)
                     title = place.name
-                    icon = holder.icons.forPlace(place, place.id == selectedId)
+                    icon = holder.icons.forPlace(place, isSelected)
+                    alpha = if (selected != null && !isSelected) 0.45f else 1f
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     setOnMarkerClickListener { _, _ -> placeClickCb(place); true }
                 })
@@ -186,6 +197,7 @@ private class MarkerIcons(private val context: Context) {
 
     fun forPlace(place: Place, selected: Boolean): Drawable {
         val color = when {
+            place.isPending -> Espresso
             place.isBabyFriendly -> Sage
             place.status(Feature.PRAM_ACCESS) == Status.YES ||
                 place.status(Feature.PRAM_ACCESS) == Status.LIMITED -> Honey
@@ -196,27 +208,39 @@ private class MarkerIcons(private val context: Context) {
 
     private fun draw(color: Int, selected: Boolean): Drawable {
         val d = context.resources.displayMetrics.density
-        val w = ((if (selected) 34 else 26) * d).toInt()
-        val h = (w * 1.3f).toInt()
+        // The selected pin is ~1.8x larger and sits inside a soft halo, so it stays visible in a crowd.
+        val pinW = (if (selected) 46 else 26) * d
+        val halo = if (selected) 10 * d else 0f
+        val w = (pinW + 2 * halo).toInt()
+        val h = (pinW * 1.3f + halo).toInt()
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
-        val r = w / 2f
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+        val cx = w / 2f
+        val r = pinW / 2f
+        val cy = halo + r
+        if (selected) {
+            val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color; alpha = 70 }
+            c.drawCircle(cx, cy, r + halo - 1 * d, haloPaint)
+        }
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color
+            if (selected) setShadowLayer(4 * d, 0f, 2 * d, 0x66000000)
+        }
         val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = if (selected) Espresso.toArgb() else android.graphics.Color.WHITE
+            this.color = android.graphics.Color.WHITE
             style = Paint.Style.STROKE
-            strokeWidth = 2.5f * d
+            strokeWidth = (if (selected) 3.5f else 2.5f) * d
         }
         val path = android.graphics.Path().apply {
-            addCircle(r, r, r - 2 * d, android.graphics.Path.Direction.CW)
-            moveTo(r - r * 0.55f, r + r * 0.6f)
-            lineTo(r, h - 2 * d)
-            lineTo(r + r * 0.55f, r + r * 0.6f)
+            addCircle(cx, cy, r - 2 * d, android.graphics.Path.Direction.CW)
+            moveTo(cx - r * 0.55f, cy + r * 0.6f)
+            lineTo(cx, h - 2 * d)
+            lineTo(cx + r * 0.55f, cy + r * 0.6f)
             close()
         }
         c.drawPath(path, fill)
-        c.drawCircle(r, r, r - 2 * d, stroke)
-        c.drawCircle(r, r, r * 0.32f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = android.graphics.Color.WHITE })
+        c.drawCircle(cx, cy, r - 2 * d, stroke)
+        c.drawCircle(cx, cy, r * 0.32f, Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = android.graphics.Color.WHITE })
         return BitmapDrawable(context.resources, bmp)
     }
 }

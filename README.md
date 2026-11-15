@@ -1,4 +1,4 @@
-# Cortado ☕👶
+# babylatte ☕👶
 
 An Android app for finding pram- and baby-friendly cafés in Copenhagen or any other city.
 
@@ -11,11 +11,11 @@ An Android app for finding pram- and baby-friendly cafés in Copenhagen or any o
 
 ## Tech
 Kotlin · Jetpack Compose (Material 3) · osmdroid (OSM raster map) · Overpass API · Nominatim · DataStore.
-minSdk 26, targetSdk 36. Package: `app.cortado` (change `applicationId` in `app/build.gradle.kts` **before** your first Play upload, because it can never change afterwards).
+minSdk 26, targetSdk 36. Package: `app.babylatte` (change `applicationId` in `app/build.gradle.kts` **before** your first Play upload, because it can never change afterwards).
 
 ```
-app/src/main/java/app/cortado/
-  CortadoApp.kt          app setup: HTTP user agent, osmdroid config, simple dependency wiring
+app/src/main/java/app/babylatte/
+  BabylatteApp.kt          app setup: HTTP user agent, osmdroid config, simple dependency wiring
   data/Place.kt          model + Feature enum (what we filter on)
   data/OsmTags.kt        OSM tags → feature status (yes / limited / no / unknown)
   data/Filters.kt        filter + sort logic
@@ -70,11 +70,11 @@ The **debug** build sends reports to the OSM *sandbox* (`master.apis.dev.openstr
 
 1. **Create an upload key** (once; keep it backed up and out of git):
    ```bash
-   keytool -genkey -v -keystore ~/cortado-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   keytool -genkey -v -keystore ~/babylatte-upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
    ```
    Then create `keystore.properties` in the project root:
    ```properties
-   storeFile=/home/you/cortado-upload.jks
+   storeFile=/home/you/babylatte-upload.jks
    storePassword=...
    keyAlias=upload
    keyPassword=...

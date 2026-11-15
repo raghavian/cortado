@@ -1,4 +1,4 @@
-package app.cortado.ui
+package app.babylatte.ui
 
 import android.content.Intent
 import android.net.Uri
@@ -45,29 +45,37 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import app.cortado.data.Feature
-import app.cortado.data.Place
-import app.cortado.data.Report
-import app.cortado.data.Status
+import app.babylatte.data.Feature
+import app.babylatte.data.Place
+import app.babylatte.data.Report
+import app.babylatte.data.Status
 
-/** Full-screen form for reporting family facilities. Sent as an anonymous OpenStreetMap note. */
+private val NEW_PLACE_TYPES = listOf("cafe" to "Café", "restaurant" to "Restaurant", "ice_cream" to "Ice cream")
+
+/**
+ * Full-screen form for reporting family facilities, or (when [place] is null) for adding a café
+ * that's missing from the map. Either way it's sent as an anonymous OpenStreetMap note.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportDialog(
-    place: Place,
+    place: Place?,
     state: ReportState,
     onSend: (Report) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isNew = place == null
     val answers = remember { mutableStateMapOf<Feature, Status>() }
     var comment by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var amenity by remember { mutableStateOf("cafe") }
     val context = LocalContext.current
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Report for ${place.name}", maxLines = 1) },
+                    title = { Text(if (place == null) "Add a café" else "Report for ${place.name}", maxLines = 1) },
                     navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close") } },
                 )
             },
@@ -82,7 +90,9 @@ fun ReportDialog(
                     Spacer(Modifier.height(16.dp))
                     Text("Thank you!", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "Your report was posted as an OpenStreetMap note. Volunteer mappers usually review " +
+                        if (isNew) "Your suggestion was posted as an OpenStreetMap note. Until volunteer mappers " +
+                            "add it to the map (usually days to weeks), it shows as a pending pin on your phone."
+                        else "Your report was posted as an OpenStreetMap note. Volunteer mappers usually review " +
                             "notes within days to weeks; once they update the map, the info will appear here.",
                         textAlign = TextAlign.Center,
                     )
@@ -97,6 +107,29 @@ fun ReportDialog(
                     Modifier.fillMaxSize().padding(padding).imePadding().verticalScroll(rememberScrollState())
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                 ) {
+                    if (isNew) {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it.take(120) },
+                            label = { Text("Name *") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text("Type", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(4.dp))
+                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                            NEW_PLACE_TYPES.forEachIndexed { i, (value, label) ->
+                                SegmentedButton(
+                                    selected = amenity == value,
+                                    onClick = { amenity = value },
+                                    shape = SegmentedButtonDefaults.itemShape(i, NEW_PLACE_TYPES.size),
+                                ) { Text(label, maxLines = 1) }
+                            }
+                        }
+                        Spacer(Modifier.height(20.dp))
+                        Text("Family facilities (optional)", style = MaterialTheme.typography.titleMedium)
+                    }
                     Text(
                         "Only answer what you saw yourself. Leave the rest on “Don't know”.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -136,7 +169,9 @@ fun ReportDialog(
                         value = comment,
                         onValueChange = { comment = it.take(1000) },
                         label = { Text("Anything else? (optional)") },
-                        placeholder = { Text("e.g. changing table is in the downstairs toilet") },
+                        placeholder = {
+                            Text(if (isNew) "e.g. entrance is around the corner" else "e.g. changing table is in the downstairs toilet")
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         minLines = 3,
                     )
@@ -152,14 +187,17 @@ fun ReportDialog(
                         Text(state.message, color = MaterialTheme.colorScheme.error)
                     }
                     Spacer(Modifier.height(12.dp))
-                    val report = Report(answers.toMap(), comment)
+                    val report = Report(
+                        answers.toMap(), comment,
+                        newPlace = if (isNew) app.babylatte.data.NewPlace(name.trim(), amenity) else null,
+                    )
                     Button(
                         onClick = { onSend(report) },
-                        enabled = !report.isEmpty && state !is ReportState.Sending,
+                        enabled = (if (isNew) name.isNotBlank() else !report.isEmpty) && state !is ReportState.Sending,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         if (state is ReportState.Sending) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Text("Send report")
+                        else Text(if (isNew) "Add café" else "Send report")
                     }
                     Spacer(Modifier.height(24.dp))
                 }

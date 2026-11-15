@@ -1,4 +1,4 @@
-package app.cortado.data
+package app.babylatte.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -184,14 +184,16 @@ class NotesClient(private val http: Http, private val apiBase: String) {
 
     companion object {
         fun noteText(place: Place, report: Report): String = buildString {
-            appendLine("Family-friendliness report for \"${place.name}\" (${place.osmUrl}):")
+            val newPlace = report.newPlace
+            if (newPlace != null) {
+                appendLine("Missing place: \"${newPlace.name}\" (suggested tags amenity=${newPlace.amenity}, name=${newPlace.name})")
+                appendLine("A visitor says this place exists at this location but isn't on the map yet.")
+                if (report.answers.values.any { it != Status.UNKNOWN }) appendLine("Family facilities:")
+            } else {
+                appendLine("Family-friendliness report for \"${place.name}\" (${place.osmUrl}):")
+            }
             report.answers.forEach { (feature, status) ->
-                val value = when (status) {
-                    Status.YES -> "yes"
-                    Status.LIMITED -> "limited"
-                    Status.NO -> "no"
-                    Status.UNKNOWN -> return@forEach
-                }
+                val value = status.tagValue() ?: return@forEach
                 appendLine("- ${feature.label}: $value (suggested tag ${OsmTags.reportTag(feature)}=$value)")
             }
             if (report.comment.isNotBlank()) {
@@ -199,11 +201,26 @@ class NotesClient(private val http: Http, private val apiBase: String) {
                 appendLine("Comment: ${report.comment.trim()}")
             }
             appendLine()
-            append("Reported by a visitor via the Cortado app. #cortadoapp")
+            append("Reported by a visitor via the babylatte app. #babylatte")
         }
     }
 }
 
-data class Report(val answers: Map<Feature, Status>, val comment: String) {
+/** A user's report. With [newPlace] set it suggests adding a place that is missing from the map. */
+data class Report(val answers: Map<Feature, Status>, val comment: String, val newPlace: NewPlace? = null) {
     val isEmpty: Boolean get() = answers.values.all { it == Status.UNKNOWN } && comment.isBlank()
+
+    /** OSM-style tags for the reported facilities, so a pending place works with the filters. */
+    fun facilityTags(): Map<String, String> = answers.mapNotNull { (f, s) ->
+        s.tagValue()?.let { OsmTags.reportTag(f) to it }
+    }.toMap()
+}
+
+data class NewPlace(val name: String, val amenity: String)
+
+fun Status.tagValue(): String? = when (this) {
+    Status.YES -> "yes"
+    Status.LIMITED -> "limited"
+    Status.NO -> "no"
+    Status.UNKNOWN -> null
 }

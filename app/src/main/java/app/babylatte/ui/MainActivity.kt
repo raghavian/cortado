@@ -1,4 +1,4 @@
-package app.cortado.ui
+package app.babylatte.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -13,6 +13,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +34,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.AddLocationAlt
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FilterListOff
 import androidx.compose.material.icons.filled.Info
@@ -58,6 +61,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -82,14 +87,14 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import app.cortado.BuildConfig
-import app.cortado.data.Category
-import app.cortado.data.Filters
-import app.cortado.data.Place
-import app.cortado.ui.theme.CortadoTheme
-import app.cortado.ui.theme.Fog
-import app.cortado.ui.theme.Honey
-import app.cortado.ui.theme.Sage
+import app.babylatte.BuildConfig
+import app.babylatte.data.Category
+import app.babylatte.data.Filters
+import app.babylatte.data.Place
+import app.babylatte.ui.theme.BabylatteTheme
+import app.babylatte.ui.theme.Fog
+import app.babylatte.ui.theme.Honey
+import app.babylatte.ui.theme.Sage
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
@@ -97,7 +102,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { CortadoTheme { MainScreen(vm) } }
+        setContent { BabylatteTheme { MainScreen(vm) } }
     }
 }
 
@@ -192,7 +197,7 @@ fun MainScreen(vm: MainViewModel) {
                 MapPane(
                     // Most family-friendly first, so capping keeps the useful pins.
                     places = state.visible.take(MAX_PINS),
-                    selectedId = state.selected?.id,
+                    selected = state.selected,
                     initialCamera = cam,
                     commands = vm.commands,
                     hasLocationPermission = hasLocation,
@@ -207,12 +212,16 @@ fun MainScreen(vm: MainViewModel) {
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            if (tab == Tab.MAP) {
+            if (tab == Tab.MAP && state.addStep == AddStep.Placing) {
+                PlacePinOverlay(onConfirm = vm::confirmLocation, onCancel = vm::cancelAdd)
+            } else if (tab == Tab.MAP) {
                 MapOverlays(
                     areaChanged = state.areaChanged && !state.loading,
-                    filteredOut = state.places.size - state.visible.size,
+                    filteredOut = (state.places.size + state.pending.size - state.visible.size).coerceAtLeast(0),
+                    hasPending = state.pending.isNotEmpty(),
                     onSearchArea = vm::loadArea,
                     onLocate = vm::locateMe,
+                    onAdd = vm::startAdd,
                 )
             } else {
                 Surface(Modifier.fillMaxSize()) {
@@ -249,6 +258,7 @@ fun MainScreen(vm: MainViewModel) {
                 onToggleFavorite = { vm.toggleFavorite(place) },
                 onReport = { vm.resetReport(); reporting = place },
                 onShowOnMap = if (tab != Tab.MAP) ({ tab = Tab.MAP; vm.showOnMap(place) }) else null,
+                onRemovePending = { vm.removePending(place) },
             )
         }
     }
@@ -259,6 +269,52 @@ fun MainScreen(vm: MainViewModel) {
             state = reportState,
             onSend = { vm.sendReport(place, it) },
             onDismiss = { reporting = null; vm.resetReport() },
+        )
+    }
+
+    when (val step = state.addStep) {
+        is AddStep.CheckDuplicates -> AlertDialog(
+            onDismissRequest = vm::cancelAdd,
+            title = { Text("Already on the map?") },
+            text = {
+                Column {
+                    Text("These places are right next to your pin. Is it one of them?")
+                    Spacer(Modifier.height(8.dp))
+                    step.nearby.forEach { p ->
+                        TextButton(onClick = { vm.pickExisting(p) }, Modifier.fillMaxWidth()) {
+                            Text(p.name, Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = vm::notADuplicate) { Text("No, it's a new place") } },
+            dismissButton = { TextButton(onClick = vm::cancelAdd) { Text("Cancel") } },
+        )
+        is AddStep.Form -> ReportDialog(
+            place = null,
+            state = reportState,
+            onSend = { vm.sendNewPlace(step.lat, step.lon, it) },
+            onDismiss = vm::finishAdd,
+        )
+        else -> Unit
+    }
+
+    if (state.placeResults.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = vm::clearSearchResults,
+            title = { Text("Cafés named \u201c${state.lastQuery}\u201d") },
+            text = {
+                LazyColumn {
+                    items(state.placeResults, key = { it.id }) { p ->
+                        PlaceRow(p, state.userLat, state.userLon, p.id in state.favorites) { vm.pickSearchResult(p) }
+                        HorizontalDivider()
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = vm::clearSearchResults) { Text("Cancel") } },
+            dismissButton = {
+                TextButton(onClick = { vm.searchLocation(state.lastQuery) }) { Text("Search areas instead") }
+            },
         )
     }
 
@@ -290,7 +346,7 @@ private fun SearchRow(onSearch: (String) -> Unit, onAbout: () -> Unit) {
         TextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("Search a city or neighbourhood") },
+            placeholder = { Text("Search a café, city or area") },
             leadingIcon = { Icon(Icons.Filled.Search, null) },
             trailingIcon = {
                 if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Clear, "Clear") }
@@ -355,7 +411,14 @@ private fun FilterRow(
 }
 
 @Composable
-private fun MapOverlays(areaChanged: Boolean, filteredOut: Int, onSearchArea: () -> Unit, onLocate: () -> Unit) {
+private fun MapOverlays(
+    areaChanged: Boolean,
+    filteredOut: Int,
+    hasPending: Boolean,
+    onSearchArea: () -> Unit,
+    onLocate: () -> Unit,
+    onAdd: () -> Unit,
+) {
     Box(Modifier.fillMaxSize()) {
         AnimatedVisibility(areaChanged, Modifier.align(Alignment.TopCenter).padding(top = 12.dp)) {
             Button(onClick = onSearchArea) {
@@ -366,6 +429,12 @@ private fun MapOverlays(areaChanged: Boolean, filteredOut: Int, onSearchArea: ()
         }
         Column(Modifier.align(Alignment.BottomEnd).padding(16.dp), horizontalAlignment = Alignment.End) {
             SmallFloatingActionButton(onClick = onLocate) { Icon(Icons.Filled.MyLocation, "My location") }
+            Spacer(Modifier.height(12.dp))
+            ExtendedFloatingActionButton(
+                onClick = onAdd,
+                icon = { Icon(Icons.Filled.AddLocationAlt, null) },
+                text = { Text("Add café") },
+            )
         }
         Surface(
             Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 28.dp),
@@ -377,11 +446,47 @@ private fun MapOverlays(areaChanged: Boolean, filteredOut: Int, onSearchArea: ()
                 LegendItem(Sage, "Baby friendly")
                 LegendItem(Honey, "Pram access")
                 LegendItem(Fog, "No info yet")
+                if (hasPending) LegendItem(app.babylatte.ui.theme.Espresso, "Added by you")
                 if (filteredOut > 0) {
                     Text("$filteredOut hidden by filters", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+        }
+    }
+}
+
+/** Fixed pin in the middle of the map; the user pans the map underneath it. */
+@Composable
+private fun PlacePinOverlay(onConfirm: () -> Unit, onCancel: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        Surface(
+            Modifier.align(Alignment.TopCenter).padding(12.dp).fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            tonalElevation = 3.dp,
+            shadowElevation = 3.dp,
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Where is the café?", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Move the map so the pin is on the café's entrance. Zoom in for accuracy.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        // Pin tip sits exactly on the map centre.
+        Icon(
+            Icons.Filled.Place, null,
+            Modifier.align(Alignment.Center).size(48.dp).offset(y = (-24).dp),
+            tint = app.babylatte.ui.theme.Clay,
+        )
+        Box(Modifier.align(Alignment.Center).size(6.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape))
+        Row(
+            Modifier.align(Alignment.BottomCenter).padding(16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            OutlinedButton(onClick = onCancel, Modifier.weight(1f)) { Text("Cancel") }
+            Button(onClick = onConfirm, Modifier.weight(1f)) { Text("It's here") }
         }
     }
 }
@@ -403,10 +508,10 @@ private fun EmptyState(text: String) {
 }
 
 @Composable
-private fun AboutDialog(offline: app.cortado.data.OfflineStatus, onDismiss: () -> Unit) {
+private fun AboutDialog(offline: app.babylatte.data.OfflineStatus, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Cortado ${BuildConfig.VERSION_NAME}") },
+        title = { Text("babylatte ${BuildConfig.VERSION_NAME}") },
         text = {
             Column {
                 Text("Find pram- and baby-friendly cafés anywhere in the world.")

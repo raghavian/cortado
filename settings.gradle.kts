@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Cortado"
+rootProject.name = "babylatte"
 include(":app")

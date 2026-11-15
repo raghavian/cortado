@@ -1,4 +1,4 @@
-package app.cortado.ui
+package app.babylatte.ui
 
 import android.content.Intent
 import android.net.Uri
@@ -46,10 +46,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.cortado.data.Feature
-import app.cortado.data.Filters
-import app.cortado.data.Place
-import app.cortado.data.Status
+import app.babylatte.data.Feature
+import app.babylatte.data.Filters
+import app.babylatte.data.Place
+import app.babylatte.data.Status
 
 private fun categoryLabel(c: String) = when (c) {
     "cafe" -> "Café"
@@ -110,6 +110,7 @@ fun PlaceDetails(
     onToggleFavorite: () -> Unit,
     onReport: () -> Unit,
     onShowOnMap: (() -> Unit)?,
+    onRemovePending: () -> Unit = {},
 ) {
     val context = LocalContext.current
     fun open(uri: String) = runCatching {
@@ -182,6 +183,24 @@ fun PlaceDetails(
         Feature.entries.forEach { f -> FeatureLine(f, place.status(f)) }
 
         Spacer(Modifier.height(16.dp))
+        if (place.isPending) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Added by you, waiting for review", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Only you can see this pin for now. Once OpenStreetMap volunteers add the place, " +
+                            "it appears for everyone and this pending copy disappears automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        place.pendingNoteUrl?.let { url -> OutlinedButton(onClick = { open(url) }) { Text("View note") } }
+                        OutlinedButton(onClick = onRemovePending) { Text("Remove") }
+                    }
+                }
+            }
+            return@Column
+        }
         Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
             Column(Modifier.padding(16.dp)) {
                 Text("Been here with a little one?", style = MaterialTheme.typography.titleSmall)

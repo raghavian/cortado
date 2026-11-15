@@ -25,7 +25,7 @@ ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
 ]
-USER_AGENT = "Cortado-snapshot/1.0 (+https://github.com/raghavian/cortado)"
+USER_AGENT = "babylatte-snapshot/1.0 (+https://github.com/raghavian/cortado)"
 
 # Tags the app actually reads. Everything else is dropped to keep tiles small.
 KEEP_PREFIXES = ("addr:",)
@@ -134,8 +134,8 @@ def main() -> None:
     total = sum(e["placeCount"] for e in entries)
     with open(os.path.join(args.out, "index.html"), "w") as f:
         f.write(
-            "<!doctype html><meta charset=utf-8><title>Cortado data</title>"
-            f"<p>Offline café data for the Cortado app: {total} places, generated {generated}.</p>"
+            "<!doctype html><meta charset=utf-8><title>babylatte data</title>"
+            f"<p>Offline café data for the babylatte app: {total} places, generated {generated}.</p>"
             "<p>Data © <a href='https://www.openstreetmap.org/copyright'>OpenStreetMap contributors</a>, ODbL.</p>"
         )
 

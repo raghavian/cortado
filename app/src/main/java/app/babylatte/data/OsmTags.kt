@@ -1,4 +1,4 @@
-package app.cortado.data
+package app.babylatte.data
 
 /** Translates OpenStreetMap tags into family-friendly [Feature]s. */
 object OsmTags {

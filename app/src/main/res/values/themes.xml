@@ -1,7 +1,7 @@
 <resources>
-    <style name="Theme.Cortado" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@color/cortado_bg</item>
+    <style name="Theme.Babylatte" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/babylatte_bg</item>
     </style>
-    <color name="cortado_bg">#FFFFFBF7</color>
+    <color name="babylatte_bg">#FFFFFBF7</color>
     <color name="ic_background">#FFF6EBDD</color>
 </resources>
