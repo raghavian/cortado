@@ -181,7 +181,7 @@ fun MapPane(
                     position = GeoPoint(place.lat, place.lon)
                     title = place.name
                     icon = holder.icons.forPlace(place, isSelected)
-                    alpha = if (selected != null && !isSelected) 0.45f else 1f
+                    alpha = if (selected != null && !isSelected) 0.6f else 1f
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     setOnMarkerClickListener { _, _ -> placeClickCb(place); true }
                 })

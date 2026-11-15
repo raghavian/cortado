@@ -84,6 +84,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var centerLat = 0.0
     private var centerLon = 0.0
     private var loadJob: Job? = null
+    private var autoJob: Job? = null
 
     private val _commands = Channel<MapCommand>(Channel.BUFFERED)
     val commands = _commands.receiveAsFlow()
@@ -134,20 +135,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         this.centerLon = centerLon
         viewModelScope.launch { store.setCamera(centerLat, centerLon, zoom) }
         val last = lastBox
-        if (last == null) {
-            loadArea()
-        } else {
-            val moved = !last.containsMostOf(box)
-            core.update { it.copy(areaChanged = moved) }
+        when {
+            last == null -> loadArea()
+            // Offline data is instant, so just follow the map (after a search, pan or zoom).
+            deps.offline.hasData -> autoLoad(box)
+            else -> core.update { it.copy(areaChanged = !last.containsMostOf(box)) }
+        }
+    }
+
+    /**
+     * Reloads pins from offline data whenever the map moves. Outside the offline regions it only
+     * shows the "Search this area" button, so we never hit the slow live servers on every pan.
+     */
+    private fun autoLoad(box: BoundingBox) {
+        autoJob?.cancel()
+        autoJob = viewModelScope.launch {
+            val places = deps.offline.query(box, core.value.category)
+            if (places == null) {
+                val last = lastBox
+                core.update { it.copy(areaChanged = last == null || !last.containsMostOf(box)) }
+                return@launch
+            }
+            loadJob?.cancel() // a live search for the previous area is no longer needed
+            lastBox = box
+            core.update { it.copy(places = places, areaChanged = false, loading = false, slow = false) }
         }
     }
 
     fun loadArea() {
         val box = currentBox ?: return
-        if (box.areaDeg2 > MAX_AREA_DEG2) {
-            core.update { it.copy(info = "Zoom in a little to search for cafés here.", areaChanged = true) }
-            return
-        }
         loadJob?.cancel()
         val category = core.value.category
         loadJob = viewModelScope.launch {
@@ -164,6 +180,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 core.update {
                     it.copy(places = places, info = if (places.isEmpty()) "No cafés found in this area." else null)
                 }
+                return@launch
+            }
+
+            // Live search below: keep the area small so Overpass queries stay fast and polite.
+            if (box.areaDeg2 > MAX_AREA_DEG2) {
+                core.update { it.copy(info = "Zoom in a little to search for cafés here.", areaChanged = true) }
                 return@launch
             }
 
