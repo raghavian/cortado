@@ -24,8 +24,20 @@ jobs:
     timeout-minutes: 120 # only reached if it has to fall back to Overpass and retry
     steps:
       - uses: actions/checkout@v7
+      # Never fails the job: without osmium the script falls back to Overpass.
       - name: Install osmium-tool
-        run: sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
+        run: |
+          for i in 1 2 3; do
+            sudo apt-get update -q -o Acquire::Retries=3 || true
+            sudo apt-get install -y -q -o Acquire::Retries=3 osmium-tool && break
+            sleep 30
+          done
+          if ! command -v osmium >/dev/null; then
+            echo "::warning::apt could not install osmium-tool; trying conda-forge"
+            "$CONDA/bin/conda" create -y -q -p "$RUNNER_TEMP/osm" -c conda-forge osmium-tool \
+              && echo "$RUNNER_TEMP/osm/bin" >> "$GITHUB_PATH" \
+              || echo "::warning::osmium-tool unavailable; the snapshot will use Overpass this time"
+          fi
       - name: Build snapshot from OpenStreetMap (Geofabrik extract)
         run: python3 scripts/build_snapshot.py --out site
       - uses: actions/upload-pages-artifact@v5
