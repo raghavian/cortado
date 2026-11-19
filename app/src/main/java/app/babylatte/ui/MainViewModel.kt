@@ -59,6 +59,8 @@ data class UiState(
     val userLat: Double? = null,
     val userLon: Double? = null,
     val searchResults: List<GeoResult> = emptyList(),
+    /** True when [searchResults] came from the offline data, so the dialog offers a worldwide search. */
+    val searchResultsOffline: Boolean = false,
     /** Cafés whose name matches the search, shown above the area results. */
     val placeResults: List<Place> = emptyList(),
     val lastQuery: String = "",
@@ -292,16 +294,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Search only cities / neighbourhoods / addresses (also offered from the results dialog). */
+    /**
+     * Search towns, neighbourhoods and streets (also offered from the café results dialog).
+     * Uses the offline data first, so most searches need no internet and put no load on
+     * OpenStreetMap's servers; Nominatim is only asked when nothing offline matches.
+     */
     fun searchLocation(query: String) {
-        core.update { it.copy(placeResults = emptyList()) }
+        core.update { it.copy(placeResults = emptyList(), lastQuery = query.trim()) }
+        viewModelScope.launch {
+            val offline = deps.offline.searchAreas(query, state.value.userLat ?: centerLat, state.value.userLon ?: centerLon)
+            when {
+                offline.size == 1 && !query.any(Char::isDigit) -> goTo(offline.first())
+                offline.isNotEmpty() -> core.update { it.copy(searchResults = offline, searchResultsOffline = true) }
+                else -> searchOnline(query)
+            }
+        }
+    }
+
+    /** Worldwide search via Nominatim, for places outside the offline data and exact addresses. */
+    fun searchOnline(query: String) {
+        core.update { it.copy(searchResults = emptyList(), placeResults = emptyList()) }
         viewModelScope.launch {
             try {
                 val results = deps.geocoding.search(query.trim())
                 when {
                     results.isEmpty() -> core.update { it.copy(info = "No place found for \"$query\".") }
                     results.size == 1 -> goTo(results.first())
-                    else -> core.update { it.copy(searchResults = results) }
+                    else -> core.update { it.copy(searchResults = results, searchResultsOffline = false) }
                 }
             } catch (e: Exception) {
                 core.update { it.copy(error = "Search failed: ${e.message}") }
@@ -315,7 +334,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Fit small areas (a neighbourhood); for whole cities, zoom to the centre instead.
         // Point-like results (some neighbourhoods are a single node) also zoom to the centre.
         if (bb != null && bb.areaDeg2 in MIN_FIT_AREA_DEG2..MAX_AREA_DEG2) _commands.trySend(MapCommand.Fit(bb))
-        else _commands.trySend(MapCommand.MoveTo(result.lat, result.lon, 15.0))
+        else _commands.trySend(MapCommand.MoveTo(result.lat, result.lon, result.zoom))
         lastBox = null // force a fresh load once the map settles
     }
 

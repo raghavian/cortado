@@ -340,6 +340,9 @@ fun MainScreen(vm: MainViewModel) {
                 }
             },
             confirmButton = { TextButton(onClick = vm::clearSearchResults) { Text("Cancel") } },
+            dismissButton = if (state.searchResultsOffline) {
+                { TextButton(onClick = { vm.searchOnline(state.lastQuery) }) { Text("Search worldwide") } }
+            } else null,
         )
     }
 

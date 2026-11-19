@@ -40,12 +40,15 @@ app/src/main/java/app/babylatte/
 
 ## Data: offline by default, refreshed daily
 
-The public Overpass servers are often overloaded (30–60 s per request), so the app keeps its own copy of the data on the phone:
+The app keeps its own copy of the data on the phone, so it works without signal and puts almost no load on OpenStreetMap's volunteer-run servers:
 
-1. **Daily snapshot.** `.github/workflows/data.yml` runs `scripts/build_snapshot.py` every night. It downloads all cafés, restaurants, ice-cream and fast-food places for the regions in `scripts/regions.json` (currently Denmark: about 13,500 places, **0.5 MB** compressed), keeps only the tags the app uses and publishes them to GitHub Pages:
+1. **Daily snapshot.** `.github/workflows/data.yml` runs `scripts/build_snapshot.py` every night. It downloads [Geofabrik](https://download.geofabrik.de)'s daily extract for each region in `scripts/regions.json` (currently Denmark), filters it with `osmium-tool` and publishes to GitHub Pages:
    `https://raghavian.github.io/cortado/v1/index.json` and `.../v1/regions/dk.json.gz`
+   Each region file holds all cafés, restaurants, ice-cream and fast-food places (only the tags the app uses) plus an **offline search index** of towns, neighbourhoods and streets.
+   If Geofabrik is down or its extract is more than 3 days old, the script falls back to one Overpass query and reuses the previous search index. If that fails too, nothing is published and phones keep the previous data.
 2. **Offline on the phone.** On first launch the app downloads the whole region file, then searches and filters it locally: instant and with no signal needed. `SyncWorker` (WorkManager) re-checks once a day and only downloads again when a newer snapshot has been published.
-3. **Live Overpass fallback** for areas outside the downloaded regions (e.g. Malmö). The last 12 such areas are cached on the device.
+3. **Search.** Café names, towns, neighbourhoods and streets are searched offline. Nominatim is only asked when nothing offline matches, or when the user taps "Search worldwide".
+4. **Live Overpass fallback** for areas outside the downloaded regions (e.g. Malmö). The last 12 such areas are cached on the device.
 
 To cover another country, add it to `scripts/regions.json`. (Every phone currently downloads every region. Once there are many countries, the app should pick regions by location.) Snapshot data is © OpenStreetMap contributors (ODbL), and the attribution is included in every file.
 
@@ -89,7 +92,7 @@ The **debug** build sends reports to the OSM *sandbox* (`master.apis.dev.openstr
 
 ## Before going big: usage policies
 - **Map tiles:** the app uses `tile.openstreetmap.org`, which is fine for a small app but has a [usage policy](https://operations.osmfoundation.org/policies/tiles/) that discourages heavy app traffic. If the app grows, switch to a hosted tile provider (MapTiler, Stadia, Thunderforest, …) in `MapPane.kt` (`setTileSource`).
-- **Overpass / Nominatim:** public, free instances with fair-use limits. The app only queries when the user searches an area (max ~10×10 km) and only geocodes on submit, as their policies require.
+- **Overpass / Nominatim:** public, free instances with fair-use limits. The app only uses them outside the offline regions (Overpass, max ~10×10 km per query) or when an offline search finds nothing (Nominatim, on submit only), as their policies require.
 - **OSM Notes:** reports are public and anonymous. The form asks users to report only what they saw.
 
 ## Ideas for later

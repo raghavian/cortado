@@ -27,9 +27,14 @@ class OfflineDataTest {
 
     private fun gz(s: String) = ByteArrayOutputStream().also { GZIPOutputStream(it).use { g -> g.write(s.toByteArray()) } }.toByteArray()
 
-    private fun publish(generated: String, extraPlace: String = "") {
+    private fun publish(generated: String, extraPlace: String = "", search: String? = null, searchGenerated: String = generated) {
+        val searchFields = if (search == null) "" else
+            ""","searchUrl":"regions/dk.search.json.gz","searchBytes":1,"searchGenerated":"$searchGenerated""""
         files["/v1/index.json"] = """{"version":1,"generated":"$generated","regions":[{"id":"dk","name":"Denmark",
-            "url":"regions/dk.json.gz","bytes":1,"placeCount":2,"generated":"$generated"}]}""".toByteArray()
+            "url":"regions/dk.json.gz","bytes":1,"placeCount":2,"generated":"$generated"$searchFields}]}""".toByteArray()
+        if (search != null) {
+            files["/v1/regions/dk.search.json.gz"] = gz("""{"region":"dk","generated":"$searchGenerated","search":[$search]}""")
+        }
         files["/v1/regions/dk.json.gz"] = gz(
             """{"region":"dk","generated":"$generated","places":[
               {"id":"node/1","lat":55.68,"lon":12.57,"tags":{"name":"Kaf","amenity":"cafe","changing_table":"yes"}},
@@ -121,5 +126,74 @@ class OfflineDataTest {
         data.sync()
         val now = OfflineData.parseInstant("2026-11-16T03:17:00+00:00")
         assertEquals(24 * 3600 * 1000L, data.ageMillis(now))
+    }
+
+    @Test fun searchesAreasOffline() = runBlocking {
+        publish(
+            "2026-11-19T03:17:00+00:00",
+            search = """
+              {"name":"Nørrebro","kind":"suburb","lat":55.694,"lon":12.549,"in":"København","bbox":[55.68,12.53,55.71,12.57]},
+              {"name":"Nørrebrogade","kind":"street","lat":55.69,"lon":12.553,"in":"Nørrebro","bbox":[55.686,12.548,55.697,12.561]},
+              {"name":"Jægersborggade","kind":"street","lat":55.6915,"lon":12.5455,"in":"Nørrebro"},
+              {"name":"Nørrebrogade","kind":"street","lat":56.1,"lon":10.2,"in":"Aarhus"},
+              {"name":"Store Kongensgade","kind":"street","lat":55.684,"lon":12.588,"in":"Indre By"}
+            """,
+        )
+        val data = OfflineData(dir, Http("test"), base)
+        assertTrue(data.sync())
+        val hereLat = 55.68; val hereLon = 12.57
+
+        // The area itself ranks above streets that start with the same word; nearer Nørrebrogade first.
+        assertEquals(
+            listOf("Nørrebro \u2014 area, København", "Nørrebrogade \u2014 street, Nørrebro", "Nørrebrogade \u2014 street, Aarhus"),
+            data.searchAreas("norrebro", hereLat, hereLon).map { it.displayName },
+        )
+        // Danish letters optional, house number and postcode ignored.
+        assertEquals("Jægersborggade \u2014 street, Nørrebro",
+            data.searchAreas("Jaegersborggade 10, 2200 København N", hereLat, hereLon).single().displayName)
+        // Start of any word: "kongens" finds Store Kongensgade; mid-word fragments don't match.
+        assertEquals(1, data.searchAreas("kongens", hereLat, hereLon).size)
+        assertTrue(data.searchAreas("gade", hereLat, hereLon).isEmpty())
+        // Bounding box order matches BoundingBox(south, west, north, east); streets zoom closer than areas.
+        val area = data.searchAreas("Nørrebro", hereLat, hereLon).first()
+        assertEquals(BoundingBox(55.68, 12.53, 55.71, 12.57), area.bbox)
+        assertTrue(data.searchAreas("Jægersborggade", hereLat, hereLon).single().zoom > area.zoom)
+    }
+
+    @Test fun searchFileOnlyRedownloadsWhenItChanges() = runBlocking {
+        val street = """{"name":"Jægersborggade","kind":"street","lat":55.6915,"lon":12.5455}"""
+        publish("2026-11-19T03:17:00+00:00", search = street, searchGenerated = "2026-11-17T03:17:00+00:00")
+        val data = OfflineData(dir, Http("test"), base)
+        assertTrue(data.sync())
+        assertEquals(1, data.searchAreas("Jægersborggade", 55.68, 12.57).size)
+
+        // Next day: new café data, same weekly search file -> only the café file is fetched.
+        publish("2026-11-20T03:17:00+00:00", search = street, searchGenerated = "2026-11-17T03:17:00+00:00")
+        requests.clear()
+        assertTrue(data.sync())
+        assertEquals(listOf("/v1/index.json", "/v1/regions/dk.json.gz"), requests)
+        assertEquals(1, data.searchAreas("Jægersborggade", 55.68, 12.57).size)
+
+        // A broken new search file keeps the old one, and the café data still updates.
+        publish("2026-11-24T03:17:00+00:00", search = street, searchGenerated = "2026-11-24T03:17:00+00:00")
+        files["/v1/regions/dk.search.json.gz"] = "broken".toByteArray()
+        assertFalse(data.sync())
+        assertEquals(1, data.searchAreas("Jægersborggade", 55.68, 12.57).size)
+        val restarted = OfflineData(dir, Http("test"), base)
+        assertEquals(1, restarted.searchAreas("Jægersborggade", 55.68, 12.57).size)
+        assertEquals("2026-11-24T03:17:00+00:00", restarted.status.value.regions.single().generated)
+        // ...and is retried next time.
+        publish("2026-11-24T03:17:00+00:00", search = street, searchGenerated = "2026-11-24T03:17:00+00:00")
+        requests.clear()
+        assertTrue(restarted.sync())
+        assertEquals(listOf("/v1/index.json", "/v1/regions/dk.search.json.gz"), requests)
+    }
+
+    @Test fun oldFilesWithoutSearchStillWork() = runBlocking {
+        publish("2026-11-15T03:17:00+00:00")
+        val data = OfflineData(dir, Http("test"), base)
+        assertTrue(data.sync())
+        assertTrue(data.searchAreas("Nørrebro", 55.68, 12.57).isEmpty())
+        assertEquals(1, data.query(copenhagen, Category.CAFES)!!.size)
     }
 }

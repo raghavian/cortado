@@ -139,7 +139,14 @@ class OverpassClient(
     }
 }
 
-data class GeoResult(val displayName: String, val lat: Double, val lon: Double, val bbox: BoundingBox?)
+/** A searched area. [zoom] is used when [bbox] is missing or too large/small to fit. */
+data class GeoResult(
+    val displayName: String,
+    val lat: Double,
+    val lon: Double,
+    val bbox: BoundingBox?,
+    val zoom: Double = 15.0,
+)
 
 /** City / address search via Nominatim. Called only on explicit submit (usage policy: no autocomplete). */
 class GeocodingClient(private val http: Http) {
