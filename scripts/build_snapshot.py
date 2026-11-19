@@ -44,24 +44,35 @@ def build_query(area_filter: str) -> str:
     return f"[out:json][timeout:600];{area_filter}->.a;({parts});out center tags qt;"
 
 
-def overpass(query: str, attempts: int = 4) -> dict:
+# Pauses between attempts. The public Overpass servers are often overloaded for a few
+# minutes (HTTP 429/502/504), so back off generously; this rides out ~30 min of trouble.
+RETRY_WAITS_S = [60, 120, 240, 480, 900]
+
+
+def overpass(query: str) -> dict:
+    attempts = len(RETRY_WAITS_S) + 1
     last = None
     for i in range(attempts):
         endpoint = ENDPOINTS[i % len(ENDPOINTS)]
         try:
             data = urllib.parse.urlencode({"data": query}).encode()
             req = urllib.request.Request(endpoint, data=data, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=900) as resp:
+            with urllib.request.urlopen(req, timeout=660) as resp:
                 body = json.load(resp)
             if body.get("remark") and "error" in body["remark"].lower():
                 raise RuntimeError(body["remark"])
             return body
         except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as e:
             last = e
-            wait = 30 * (i + 1)
-            print(f"  attempt {i + 1} on {endpoint} failed: {e}; retrying in {wait}s", file=sys.stderr)
+            if i == attempts - 1:
+                break
+            wait = RETRY_WAITS_S[i]
+            print(f"  attempt {i + 1}/{attempts} on {endpoint} failed: {e}; retrying in {wait}s", file=sys.stderr)
             time.sleep(wait)
-    raise SystemExit(f"Overpass failed after {attempts} attempts: {last}")
+    raise SystemExit(
+        f"::error::OpenStreetMap's Overpass servers were unavailable ({attempts} attempts, last error: {last}). "
+        "Nothing was published; the app keeps using the previous data until the next run succeeds."
+    )
 
 
 def compact(el: dict):
