@@ -122,16 +122,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
         }
         refreshReports()
-        // First launch downloads offline data; afterwards refresh if it's more than a day old.
-        // (SyncWorker also refreshes daily in the background.)
-        val age = deps.offline.ageMillis()
-        if (age == null || age > DAY_MS) {
-            val hadData = deps.offline.hasData
-            viewModelScope.launch {
-                if (deps.offline.sync() && !hadData) {
-                    lastBox = null
-                    loadArea()
-                }
+        checkForUpdates(force = false)
+    }
+
+    /**
+     * Downloads newer café data if it's been published. Automatic checks (app start and every
+     * return to the app) happen at most once an hour: it's one tiny file from GitHub, nothing from
+     * OpenStreetMap. [force] is the "Check for updates" button. SyncWorker also checks daily.
+     */
+    private var updateJob: kotlinx.coroutines.Job? = null
+
+    fun checkForUpdates(force: Boolean = true) {
+        val now = System.currentTimeMillis()
+        val due = !deps.offline.hasData || now - deps.offline.lastCheckedMillis() > HOUR_MS
+        if (!force && !due) return
+        if (updateJob?.isActive == true) return // app start and onResume both ask at launch
+        updateJob = viewModelScope.launch {
+            val before = deps.offline.status.value.regions.map { it.generated }
+            val ok = deps.offline.sync()
+            if (ok && deps.offline.status.value.regions.map { it.generated } != before) {
+                lastBox = null // show the new data right away
+                loadArea()
+            }
+            if (force) core.update {
+                if (ok) it.copy(info = if (deps.offline.status.value.regions.map { r -> r.generated } != before)
+                    "Downloaded the latest café data." else "Café data is up to date.")
+                else it.copy(error = "Couldn't check for new data. Are you online?")
             }
         }
     }
@@ -454,6 +470,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         const val MAX_AREA_DEG2 = 0.016
         private const val MIN_FIT_AREA_DEG2 = 0.0002
         private const val CACHE_FRESH_MS = 12 * 60 * 60 * 1000L
-        private const val DAY_MS = 24 * 60 * 60 * 1000L
+        private const val HOUR_MS = 60 * 60 * 1000L
     }
 }

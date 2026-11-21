@@ -78,13 +78,13 @@ def http_get(url: str, timeout: int = 60) -> bytes:
         return resp.read()
 
 
-def extract_age_days(path: str) -> float:
+def extract_timestamp(path: str) -> datetime:
+    """Time of the last OSM edit included in Geofabrik's current extract."""
     state = http_get(f"{GEOFABRIK}/{path}-updates/state.txt").decode()
     m = re.search(r"timestamp=(\S+)", state)
     if not m:
         raise RuntimeError("no timestamp in Geofabrik state.txt")
-    ts = datetime.strptime(m.group(1).replace("\\", ""), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - ts).total_seconds() / 86400
+    return datetime.strptime(m.group(1).replace("\\", ""), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
 
 
 def download(url: str, dest: str, attempts: int = 3) -> None:
@@ -106,12 +106,15 @@ def osmium(*args: str) -> None:
 
 
 def features_from_geofabrik(path: str, work: str, pbf: str = None):
-    """Yields GeoJSON features (dicts) for every relevant object in the extract."""
+    """(GeoJSON features for every relevant object in the extract, ISO time of its last OSM edit or None)."""
+    osm_until = None
     if pbf is None:
-        age = extract_age_days(path)
-        log(f"  Geofabrik extract is {age:.1f} days old")
+        ts = extract_timestamp(path)
+        age = (datetime.now(timezone.utc) - ts).total_seconds() / 86400
+        log(f"  Geofabrik extract has OSM edits up to {ts.isoformat()} ({age:.1f} days old)")
         if age > MAX_EXTRACT_AGE_DAYS:
             raise RuntimeError(f"Geofabrik extract is {age:.1f} days old")
+        osm_until = ts.isoformat(timespec="seconds")
         pbf = os.path.join(work, "extract.osm.pbf")
         started = time.time()
         download(f"{GEOFABRIK}/{path}-latest.osm.pbf", pbf)
@@ -124,7 +127,11 @@ def features_from_geofabrik(path: str, work: str, pbf: str = None):
     out = os.path.join(work, "features.geojsonseq")
     osmium("export", filtered, "--overwrite", "-o", out, "-f", "geojsonseq",
            "-x", "print_record_separator=false", "--add-unique-id=type_id")
-    with open(out, encoding="utf-8") as f:
+    return read_features(out), osm_until
+
+
+def read_features(path: str):
+    with open(path, encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 yield json.loads(line)
@@ -198,13 +205,16 @@ def features_from_overpass(area_filter: str):
                 body = json.load(resp)
             if body.get("remark") and "error" in body["remark"].lower():
                 raise RuntimeError(body["remark"])
+            stamp = (body.get("osm3s") or {}).get("timestamp_osm_base")
+            osm_until = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) \
+                .isoformat(timespec="seconds") if stamp else None
             cafes = []
             for el in body["elements"]:
                 pos = el.get("center") or el
                 if "lat" in pos and "lon" in pos:
                     cafes.append({"id": f'{el["type"]}/{el["id"]}', "tags": el.get("tags") or {},
                                   "lat": pos["lat"], "lon": pos["lon"]})
-            return cafes
+            return cafes, osm_until
         except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as e:
             last = e
             if i == attempts - 1:
@@ -341,16 +351,18 @@ def build_search(places: list, streets: list) -> list:
 
 
 def build_region(region: dict, work: str, source: str, pbf: str = None):
-    """Returns (cafés, search entries or None if unavailable, source used)."""
+    """Returns (cafés, search entries or None if unavailable, source used, time of the newest OSM edit)."""
     if source in ("auto", "geofabrik") and region.get("geofabrik"):
         try:
-            cafes, places, streets = split_features(features_from_geofabrik(region["geofabrik"], work, pbf))
-            return cafes, build_search(places, streets), "geofabrik"
+            features, osm_until = features_from_geofabrik(region["geofabrik"], work, pbf)
+            cafes, places, streets = split_features(features)
+            return cafes, build_search(places, streets), "geofabrik", osm_until
         except (RuntimeError, OSError, subprocess.CalledProcessError, urllib.error.URLError) as e:
             if source == "geofabrik":
                 raise
             log(f"::warning::Geofabrik failed for {region['name']} ({e}); falling back to Overpass")
-    return features_from_overpass(region["area"]), None, "overpass"
+    cafes, osm_until = features_from_overpass(region["area"])
+    return cafes, None, "overpass", osm_until
 
 
 def main() -> None:
@@ -375,7 +387,7 @@ def main() -> None:
         started = time.time()
         with tempfile.TemporaryDirectory() as work:
             try:
-                raw, search, used = build_region(region, work, args.source, args.pbf)
+                raw, search, used, osm_until = build_region(region, work, args.source, args.pbf)
             except (RuntimeError, OSError, subprocess.CalledProcessError, urllib.error.URLError) as e:
                 raise SystemExit(
                     f"::error::Could not get OpenStreetMap data for {region['name']} ({e}). Nothing was "
@@ -407,6 +419,7 @@ def main() -> None:
             "bytes": os.path.getsize(path),
             "placeCount": len(places),
             "source": used,
+            "osmDataUntil": osm_until,  # the newest OpenStreetMap edit included
             "generated": generated,
         }
         log(f"  wrote {os.path.getsize(path) / 1e6:.2f} MB")

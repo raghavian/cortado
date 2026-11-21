@@ -26,6 +26,8 @@ data class RegionEntry(
     val searchUrl: String? = null,
     val searchBytes: Long = 0,
     val searchGenerated: String? = null,
+    /** Time of the newest OpenStreetMap edit included (Geofabrik's extract time). */
+    val osmDataUntil: String? = null,
 )
 
 @Serializable
@@ -137,6 +139,9 @@ class OfflineData(private val dir: File, private val http: Http, private val bas
         }
     }
 
+    /** When the app last successfully asked whether newer data is published (0 if never). */
+    fun lastCheckedMillis(): Long = checkedFile.lastModified()
+
     /** Hours since the oldest region was generated, or null if nothing is downloaded. */
     fun ageMillis(now: Long = System.currentTimeMillis()): Long? =
         _status.value.regions.minOfOrNull { parseInstant(it.generated) }?.let { now - it }
@@ -186,6 +191,8 @@ class OfflineData(private val dir: File, private val http: Http, private val bas
                 loadMutex.withLock { places = null } // reload on next query
                 searchMutex.withLock { searchIndex = null }
             }
+            dir.mkdirs()
+            checkedFile.writeText(System.currentTimeMillis().toString()) // its modification time is what counts
             _status.value = OfflineStatus(regions = saved, lastError = searchError)
             searchError == null
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -256,6 +263,7 @@ class OfflineData(private val dir: File, private val http: Http, private val bas
     private fun regionFile(id: String) = File(dir, "$id.json")
     private fun searchFile(id: String) = File(dir, "$id.search.json")
     private val metaFile get() = File(dir, "_index.json")
+    private val checkedFile get() = File(dir, "_checked")
 
     private fun readMeta(): List<RegionEntry> =
         runCatching { json.decodeFromString<OfflineIndex>(metaFile.readText()).regions }.getOrDefault(emptyList())

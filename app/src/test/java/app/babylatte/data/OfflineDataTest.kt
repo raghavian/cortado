@@ -119,6 +119,21 @@ class OfflineDataTest {
         assertEquals(1, data.query(copenhagen, Category.CAFES)!!.size)
     }
 
+    @Test fun remembersLastCheckAndOsmEditTime() = runBlocking {
+        publish("2026-11-21T11:22:05+00:00")
+        files["/v1/index.json"] = String(files["/v1/index.json"]!!)
+            .replace("\"generated\":\"2026-11-21T11:22:05+00:00\"}]", "\"generated\":\"2026-11-21T11:22:05+00:00\",\"osmDataUntil\":\"2026-11-20T21:21:02+00:00\"}]")
+            .toByteArray()
+        val data = OfflineData(dir, Http("test"), base)
+        assertEquals(0L, data.lastCheckedMillis())
+        val before = System.currentTimeMillis() - 2000
+        assertTrue(data.sync())
+        assertTrue(data.lastCheckedMillis() >= before)
+        assertEquals("2026-11-20T21:21:02+00:00", data.status.value.regions.single().osmDataUntil)
+        // Survives a restart (stored with the downloaded data).
+        assertEquals("2026-11-20T21:21:02+00:00", OfflineData(dir, Http("test"), base).status.value.regions.single().osmDataUntil)
+    }
+
     @Test fun ageFromGeneratedTimestamp() = runBlocking {
         publish("2026-11-15T03:17:00+00:00")
         val data = OfflineData(dir, Http("test"), base)

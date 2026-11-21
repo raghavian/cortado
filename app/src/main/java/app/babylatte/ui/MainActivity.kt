@@ -104,6 +104,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent { BabylatteTheme { MainScreen(vm) } }
     }
+
+    override fun onResume() {
+        super.onResume()
+        vm.checkForUpdates(force = false) // coming back after hours or days: pick up new data
+    }
 }
 
 private const val MAX_PINS = 700
@@ -346,7 +351,7 @@ fun MainScreen(vm: MainViewModel) {
         )
     }
 
-    if (showAbout) AboutDialog(state.offline) { showAbout = false }
+    if (showAbout) AboutDialog(state.offline, onCheck = { vm.checkForUpdates() }) { showAbout = false }
 }
 
 @Composable
@@ -519,7 +524,7 @@ private fun EmptyState(text: String) {
 }
 
 @Composable
-private fun AboutDialog(offline: app.babylatte.data.OfflineStatus, onDismiss: () -> Unit) {
+private fun AboutDialog(offline: app.babylatte.data.OfflineStatus, onCheck: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("babylatte ${BuildConfig.VERSION_NAME}") },
@@ -541,10 +546,15 @@ private fun AboutDialog(offline: app.babylatte.data.OfflineStatus, onDismiss: ()
                 Text(
                     if (offline.regions.isEmpty()) "Offline data: not downloaded yet."
                     else "Offline data: ${offline.placeCount} places in " +
-                        offline.regions.joinToString { it.name } + ", updated " +
-                        offline.regions.first().generated.take(10) + ". Refreshed daily.",
+                        offline.regions.joinToString { it.name } + ", downloaded " +
+                        shortTime(offline.regions.first().generated) + "." +
+                        (offline.regions.first().osmDataUntil?.let { " Includes OpenStreetMap edits up to ${shortTime(it)}." } ?: "") +
+                        " New edits usually appear within a day.",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                TextButton(onClick = onCheck, enabled = !offline.syncing, contentPadding = PaddingValues(0.dp)) {
+                    Text(if (offline.syncing) "Checking\u2026" else "Check for updates")
+                }
                 Spacer(Modifier.height(8.dp))
                 Text("Missing info? Open a café and tap “Add or correct info”.", style = MaterialTheme.typography.bodySmall)
             }
@@ -552,3 +562,9 @@ private fun AboutDialog(offline: app.babylatte.data.OfflineStatus, onDismiss: ()
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
     )
 }
+
+/** "2026-11-20T21:21:02+00:00" -> "20 Nov, 22:21" in the phone's time zone. */
+private fun shortTime(iso: String): String = runCatching {
+    java.time.OffsetDateTime.parse(iso).atZoneSameInstant(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("d MMM, HH:mm"))
+}.getOrDefault(iso.take(10))
