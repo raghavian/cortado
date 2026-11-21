@@ -27,6 +27,8 @@ data class SubmittedReport(
     /** The change is visible in the app's data, i.e. it's really on the map now. */
     val onMap: Boolean = false,
     val lastChecked: Long = 0,
+    /** You removed the pin of this added café yourself, so it isn't re-created. */
+    val pinRemoved: Boolean = false,
 )
 
 data class NoteState(val status: NoteStatus, val closedAt: String?, val mapperComment: String?)
@@ -54,7 +56,18 @@ class ReportTracker(
             }
             if (!r.isNewPlace && isOnMap(r, offline.findById(r.placeId))) updated = updated.copy(onMap = true)
             store.updateReport(updated)
+            if (updated.isNewPlace && updated.status == NoteStatus.OPEN && !updated.pinRemoved) restorePinIfMissing(updated)
         }
+    }
+
+    /** An added café still in review whose dark pin went missing: rebuild it from the note. */
+    private suspend fun restorePinIfMissing(r: SubmittedReport) {
+        if (store.pending.first().any { it.id == r.placeId }) return
+        val pin = runCatching { parseImport(notes.fetchNoteJson(r.noteId), r.noteUrl)?.pending }.getOrNull() ?: return
+        val near = offline.query(
+            BoundingBox(pin.lat - 0.002, pin.lon - 0.004, pin.lat + 0.002, pin.lon + 0.004), Category.CAFES_AND_FOOD,
+        ).orEmpty()
+        store.addPending(pin.copy(id = r.placeId, tags = pin.tags + (Place.TAG_EXISTING to Pending.existingIds(near, pin.lat, pin.lon))))
     }
 
     companion object {

@@ -58,6 +58,9 @@ class UserStore(private val context: Context) {
         editReports { list -> list.map { if (it.noteId == report.noteId) report else it } }
 
     /** New places that showed up in the real data: their reports are now on the map. */
+    suspend fun markPinRemoved(pendingPlaceId: String) =
+        editReports { list -> list.map { if (it.placeId == pendingPlaceId) it.copy(pinRemoved = true) else it } }
+
     suspend fun markOnMap(pendingPlaceIds: Collection<String>) {
         if (pendingPlaceIds.isEmpty()) return
         editReports { list -> list.map { if (it.placeId in pendingPlaceIds) it.copy(onMap = true) else it } }

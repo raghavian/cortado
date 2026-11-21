@@ -448,7 +448,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removePending(place: Place) {
         select(null)
-        viewModelScope.launch { store.removePending(listOf(place.id)) }
+        viewModelScope.launch {
+            store.removePending(listOf(place.id))
+            store.markPinRemoved(place.id)
+        }
     }
 
     /** Re-checks the status of the user's reports (rate-limited inside the tracker). */
