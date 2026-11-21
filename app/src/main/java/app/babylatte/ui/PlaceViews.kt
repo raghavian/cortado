@@ -201,6 +201,21 @@ fun PlaceDetails(
             }
             return@Column
         }
+        place.myReportNoteUrl?.let { url ->
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Includes your report, waiting for review", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Only you see your answers here for now. Once OpenStreetMap volunteers add them, " +
+                            "everyone sees them.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { open(url) }) { Text("View note") }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
         Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
             Column(Modifier.padding(16.dp)) {
                 Text("Been here with a little one?", style = MaterialTheme.typography.titleSmall)

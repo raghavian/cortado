@@ -197,6 +197,11 @@ class NotesClient(private val http: Http, private val apiBase: String) {
         if (e.httpCode == 410 || e.httpCode == 404) NoteState(NoteStatus.HIDDEN, null, null) else throw e
     }
 
+    /** The note as JSON, for restoring reports. */
+    suspend fun fetchNoteJson(id: Long): String = http.get("$apiBase/notes/$id.json")
+
+    fun noteUrl(id: Long) = "$site/note/$id"
+
     private val site = apiBase.removeSuffix("/api/0.6").replace("api.openstreetmap.org", "www.openstreetmap.org")
 
     companion object {

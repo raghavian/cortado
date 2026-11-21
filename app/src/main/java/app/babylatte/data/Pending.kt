@@ -39,8 +39,37 @@ object Pending {
         places.filter { !it.isPending && Filters.distanceMeters(lat, lon, it.lat, it.lon) <= EXISTING_RADIUS_M }
             .joinToString(",") { it.id }
 
-    /** Your own pending places are always shown first (never hidden by filters or the pin limit). */
-    fun withPending(visibleReal: List<Place>, pending: List<Place>): List<Place> = pending + visibleReal
+    /** Your own places are always shown first (never hidden by filters or the pin limit). */
+    fun withPending(visibleReal: List<Place>, pending: List<Place>): List<Place> {
+        val (mine, others) = visibleReal.partition { it.isMine }
+        return pending + mine + others
+    }
+
+    /** How long a closed report keeps showing while the app's data catches up with the mapper's edit. */
+    private const val CLOSED_GRACE_MS = 3L * 24 * 60 * 60 * 1000
+
+    /**
+     * Shows your own reports about existing cafés right away: their reported facilities are laid
+     * over the OSM tags, and the place is marked as yours (dark pin), until the data has them
+     * ([SubmittedReport.onMap]), the note is hidden, or a mapper closed it more than 3 days ago.
+     */
+    fun applyMyReports(places: List<Place>, reports: List<SubmittedReport>, now: Long = System.currentTimeMillis()): List<Place> {
+        val active = reports
+            .filter { !it.isNewPlace && !it.onMap && it.reportedTags.isNotEmpty() && isActive(it, now) }
+            .sortedBy { it.createdAt } // a later report overrides an earlier one
+            .groupBy { it.placeId }
+        if (active.isEmpty()) return places
+        return places.map { p ->
+            val mine = active[p.id] ?: return@map p
+            p.copy(tags = mine.fold(p.tags) { tags, r -> tags + r.reportedTags } + (Place.TAG_MY_REPORT to mine.last().noteUrl))
+        }
+    }
+
+    private fun isActive(r: SubmittedReport, now: Long): Boolean = when (r.status) {
+        NoteStatus.OPEN -> true
+        NoteStatus.HIDDEN -> false
+        NoteStatus.CLOSED -> r.closedAt?.let { ReportTracker.utc(it) }?.let { now - it < CLOSED_GRACE_MS } ?: false
+    }
 
     /** Existing places close to [lat]/[lon], used to ask "is it one of these?" before adding. */
     fun nearby(places: List<Place>, lat: Double, lon: Double, radiusM: Double = 40.0): List<Place> =

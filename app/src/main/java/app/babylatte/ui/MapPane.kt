@@ -197,7 +197,7 @@ private class MarkerIcons(private val context: Context) {
 
     fun forPlace(place: Place, selected: Boolean): Drawable {
         val color = when {
-            place.isPending -> Espresso
+            place.isMine -> Espresso
             place.isBabyFriendly -> Sage
             place.status(Feature.PRAM_ACCESS) == Status.YES ||
                 place.status(Feature.PRAM_ACCESS) == Status.LIMITED -> Honey

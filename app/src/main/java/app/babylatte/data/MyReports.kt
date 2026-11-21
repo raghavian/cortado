@@ -46,7 +46,7 @@ class ReportTracker(
             if (now - r.lastChecked < minIntervalMs) continue
 
             var updated = r.copy(lastChecked = now)
-            if (r.status == NoteStatus.OPEN) {
+            run { // closed notes too: a mapper (or you) can reopen them
                 val state = runCatching { notes.fetchNote(r.noteId) }.getOrNull()
                 if (state != null) {
                     updated = updated.copy(status = state.status, closedAt = state.closedAt, mapperComment = state.mapperComment)
@@ -58,6 +58,65 @@ class ReportTracker(
     }
 
     companion object {
+        /** A report rebuilt from its OSM note, plus the dark pin to show if it's an added café still in review. */
+        data class Imported(val report: SubmittedReport, val pending: Place?)
+
+        private val TAG_LINE = Regex("""\(suggested tag ([^=\s()]+)=([^\s()]+)\)""")
+        private val NEW_PLACE = Regex("""^Missing place: "(.*)" \(suggested tags amenity=([a-z_]+),""")
+        private val EXISTING = Regex("""^Family-friendliness report for "(.*)" \(https?://[^\s/]+/(node|way|relation)/(\d+)\)""")
+
+        /**
+         * Rebuilds a report from `GET /api/0.6/notes/{id}.json`, for restoring "My reports" (for example
+         * after reinstalling). Returns null for notes not written by this app.
+         */
+        fun parseImport(body: String, noteUrl: String): Imported? {
+            val root = Json.parseToJsonElement(body).jsonObject
+            val props = root["properties"]?.jsonObject ?: return null
+            val id = props["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() ?: return null
+            val text = props["comments"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: return null
+            if (!text.contains("#babylatte")) return null
+            val coords = root["geometry"]?.jsonObject?.get("coordinates")?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull?.toDoubleOrNull() } ?: return null
+            if (coords.size != 2) return null
+            val (lon, lat) = coords
+            val created = props["date_created"]?.jsonPrimitive?.contentOrNull?.let { utc(it) } ?: 0L
+            val tags = TAG_LINE.findAll(text).associate { it.groupValues[1] to it.groupValues[2] }
+            val state = parseNote(body)
+            val firstLine = text.lineSequence().first()
+
+            NEW_PLACE.find(firstLine)?.let { m ->
+                val name = m.groupValues[1]
+                val placeId = Place.PENDING_PREFIX + "note-$id"
+                val report = SubmittedReport(
+                    noteId = id, noteUrl = noteUrl, placeId = placeId, placeName = name, isNewPlace = true,
+                    createdAt = created, reportedTags = tags, status = state.status, closedAt = state.closedAt,
+                    mapperComment = state.mapperComment,
+                )
+                val pending = if (state.status == NoteStatus.OPEN) Place(
+                    id = placeId, name = name, lat = lat, lon = lon, category = m.groupValues[2],
+                    tags = mapOf("name" to name, "amenity" to m.groupValues[2]) + tags + (Place.TAG_NOTE_URL to noteUrl),
+                ) else null
+                return Imported(report, pending)
+            }
+            EXISTING.find(firstLine)?.let { m ->
+                return Imported(
+                    SubmittedReport(
+                        noteId = id, noteUrl = noteUrl, placeId = "${m.groupValues[2]}/${m.groupValues[3]}",
+                        placeName = m.groupValues[1], isNewPlace = false, createdAt = created, reportedTags = tags,
+                        status = state.status, closedAt = state.closedAt, mapperComment = state.mapperComment,
+                    ),
+                    null,
+                )
+            }
+            return null
+        }
+
+        /** "2026-11-19 21:13:41 UTC" (OSM note dates) -> epoch millis. */
+        fun utc(osmDate: String): Long? = runCatching {
+            java.time.LocalDateTime.parse(osmDate.removeSuffix(" UTC").replace(' ', 'T'))
+                .toInstant(java.time.ZoneOffset.UTC).toEpochMilli()
+        }.getOrNull()
+
         private const val MAX_TRACK_MS = 365L * 24 * 60 * 60 * 1000
 
         /** A correction is on the map once the place's current tags contain everything reported. */

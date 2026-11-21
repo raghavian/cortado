@@ -56,6 +56,10 @@ data class Place(
     /** Added by this user and waiting for OpenStreetMap volunteers; stored only on this phone. */
     val isPending: Boolean get() = id.startsWith(PENDING_PREFIX)
     val pendingNoteUrl: String? get() = tags[TAG_NOTE_URL]
+    /** Note URL if this place shows your own report that OSM doesn't have yet (see [Pending.applyMyReports]). */
+    val myReportNoteUrl: String? get() = tags[TAG_MY_REPORT]
+    /** Added or reported by you and still waiting for OpenStreetMap: drawn as a dark pin. */
+    val isMine: Boolean get() = isPending || myReportNoteUrl != null
     /** For a pending place: ids of places that were already nearby when it was added. */
     val existingNearby: Set<String> get() = tags[TAG_EXISTING]?.split(',')?.filter { it.isNotEmpty() }?.toSet() ?: emptySet()
 
@@ -63,5 +67,6 @@ data class Place(
         const val PENDING_PREFIX = "local/"
         const val TAG_NOTE_URL = "babylatte:note"
         const val TAG_EXISTING = "babylatte:existing"
+        const val TAG_MY_REPORT = "babylatte:myreport"
     }
 }

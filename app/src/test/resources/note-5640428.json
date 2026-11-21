@@ -1,0 +1,44 @@
+{
+ "type": "Feature",
+ "geometry": {
+  "type": "Point",
+  "coordinates": [
+   12.565971,
+   55.695661
+  ]
+ },
+ "properties": {
+  "id": 5640428,
+  "url": "https://api.openstreetmap.org/api/0.6/notes/5640428.json",
+  "comment_url": "https://api.openstreetmap.org/api/0.6/notes/5640428/comment.json",
+  "close_url": "https://api.openstreetmap.org/api/0.6/notes/5640428/close.json",
+  "date_created": "2026-11-19 16:48:29 UTC",
+  "status": "open",
+  "comments": [
+   {
+    "date": "2026-11-19 16:48:29 UTC",
+    "action": "opened",
+    "text": "Family-friendliness report for \"Espresso House\" (https://www.openstreetmap.org/node/8269993820):\n- Changing table: yes (suggested tag changing_table=yes)\n- Outdoor seating: no (suggested tag outdoor_seating=no)\n- Play corner: yes (suggested tag kids_area=yes)\n- Breastfeeding friendly: yes (suggested tag baby_feeding=yes)\n- Accessible toilet: yes (suggested tag toilets:wheelchair=yes)\n- Highchairs: no (suggested tag highchair=no)\n- Pram / step-free access: yes (suggested tag stroller=yes)\n- Toilets: yes (suggested tag toilets=yes)\n\nComment: Amenities are part of the hospital infrastructure\n\nReported by a visitor via the babylatte app. #babylatte",
+    "html": "<p dir=\"auto\">Family-friendliness report for \"Espresso House\" (<a href=\"https://www.openstreetmap.org/node/8269993820\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">node/8269993820</a>):\n<br />- Changing table: yes (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:changing_table?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">changing_table</a>=yes)\n<br />- Outdoor seating: no (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:outdoor_seating?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">outdoor_seating</a>=<a href=\"https://wiki.openstreetmap.org/wiki/Tag:outdoor_seating=no?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">no</a>)\n<br />- Play corner: yes (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:kids_area?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">kids_area</a>=yes)\n<br />- Breastfeeding friendly: yes (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:baby_feeding?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">baby_feeding</a>=yes)\n<br />- Accessible toilet: yes (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:toilets:wheelchair?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">toilets:wheelchair</a>=yes)\n<br />- Highchairs: no (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:highchair?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">highchair</a>=no)\n<br />- Pram / step-free access: yes (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:stroller?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">stroller</a>=<a href=\"https://wiki.openstreetmap.org/wiki/Tag:stroller=yes?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">yes</a>)\n<br />- Toilets: yes (suggested tag <a href=\"https://wiki.openstreetmap.org/wiki/Key:toilets?uselang=en\" rel=\"nofollow noopener noreferrer\" dir=\"auto\">toilets</a>=yes)</p>\n\n<p dir=\"auto\">Comment: Amenities are part of the hospital infrastructure</p>\n\n<p dir=\"auto\">Reported by a visitor via the babylatte app. #babylatte</p>"
+   },
+   {
+    "date": "2026-11-19 21:31:04 UTC",
+    "uid": 1,
+    "user": "a_mapper",
+    "user_url": "https://www.openstreetmap.org/user/a_mapper",
+    "action": "closed",
+    "text": "",
+    "html": "<p dir=\"auto\"></p>"
+   },
+   {
+    "date": "2026-11-20 08:19:48 UTC",
+    "uid": 1,
+    "user": "a_mapper",
+    "user_url": "https://www.openstreetmap.org/user/a_mapper",
+    "action": "reopened",
+    "text": "",
+    "html": "<p dir=\"auto\"></p>"
+   }
+  ]
+ }
+}

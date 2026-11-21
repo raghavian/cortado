@@ -13,6 +13,7 @@ import app.babylatte.data.OfflineStatus
 import app.babylatte.data.Pending
 import app.babylatte.data.Place
 import app.babylatte.data.Report
+import app.babylatte.data.ReportTracker
 import app.babylatte.data.SubmittedReport
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -98,7 +99,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = combine(core, store.favorites, deps.offline.status, store.pending, store.reports) { s, favs, offline, pending, reports ->
         val resolved = Pending.resolved(pending, s.places)
         val shownPending = pending.filter { it.id !in resolved }
-        val real = Filters.sort(s.places.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
+        val places = Pending.applyMyReports(s.places, reports)
+        val real = Filters.sort(places.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
         val visible = Pending.withPending(real, shownPending)
         s.copy(favorites = favs, visible = visible, offline = offline, pending = shownPending, reports = reports)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UiState())
@@ -450,6 +452,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Re-checks the status of the user's reports (rate-limited inside the tracker). */
+    /**
+     * Restores reports from OSM notes: [input] is any text with note numbers or links (e.g. pasted
+     * from the browser). Used after reinstalling, when the phone's own list is gone.
+     */
+    fun restoreReports(input: String) {
+        val ids = Regex("""(?<![\d.])\d{3,12}(?![\d.])""").findAll(input).map { it.value.toLong() }.distinct().sorted().toList()
+        if (ids.isEmpty()) {
+            core.update { it.copy(error = "No note numbers found. Paste links like openstreetmap.org/note/5640650.") }
+            return
+        }
+        viewModelScope.launch {
+            val known = store.reports.first().map { it.noteId }.toSet()
+            var restored = 0; var skipped = 0; var failed = 0
+            for (id in ids) {
+                if (id in known) { skipped++; continue }
+                val imported = runCatching {
+                    ReportTracker.parseImport(deps.notes.fetchNoteJson(id), deps.notes.noteUrl(id))
+                }.getOrElse { failed++; continue }
+                if (imported == null) { skipped++; continue }
+                store.addReport(imported.report)
+                imported.pending?.let { p ->
+                    val near = deps.offline.query(BoundingBox(p.lat - 0.002, p.lon - 0.004, p.lat + 0.002, p.lon + 0.004), Category.CAFES_AND_FOOD)
+                        ?: state.value.places
+                    store.addPending(p.copy(tags = p.tags + (Place.TAG_EXISTING to Pending.existingIds(near, p.lat, p.lon))))
+                }
+                restored++
+            }
+            refreshReports()
+            core.update {
+                val parts = listOfNotNull(
+                    "Restored $restored report" + (if (restored == 1) "" else "s"),
+                    if (skipped > 0) "$skipped skipped (already here or not from babylatte)" else null,
+                    if (failed > 0) "$failed couldn't be loaded" else null,
+                )
+                if (failed > 0 && restored == 0) it.copy(error = parts.joinToString(". ") + ". Are you online?")
+                else it.copy(info = parts.joinToString(". ") + ".")
+            }
+        }
+    }
+
     fun refreshReports() {
         viewModelScope.launch { runCatching { deps.reports.refresh() } }
     }

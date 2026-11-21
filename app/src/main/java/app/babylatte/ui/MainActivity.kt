@@ -223,7 +223,7 @@ fun MainScreen(vm: MainViewModel) {
                 MapOverlays(
                     areaChanged = state.areaChanged && !state.loading,
                     filteredOut = (state.places.size + state.pending.size - state.visible.size).coerceAtLeast(0),
-                    hasPending = state.pending.isNotEmpty(),
+                    hasPending = state.visible.any { it.isMine },
                     onSearchArea = vm::loadArea,
                     onLocate = vm::locateMe,
                     onAdd = vm::startAdd,
@@ -236,6 +236,7 @@ fun MainScreen(vm: MainViewModel) {
                         reports = state.reports,
                         userLat = state.userLat, userLon = state.userLon,
                         onPlace = vm::select,
+                        onRestore = vm::restoreReports,
                     )
                 } else Surface(Modifier.fillMaxSize()) {
                     val items = if (tab == Tab.LIST) state.visible
@@ -462,7 +463,7 @@ private fun MapOverlays(
                 LegendItem(Sage, "Baby friendly")
                 LegendItem(Honey, "Pram access")
                 LegendItem(Fog, "No info yet")
-                if (hasPending) LegendItem(app.babylatte.ui.theme.Espresso, "Added by you")
+                if (hasPending) LegendItem(app.babylatte.ui.theme.Espresso, "Yours, in review")
                 if (filteredOut > 0) {
                     Text("$filteredOut hidden by filters", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
