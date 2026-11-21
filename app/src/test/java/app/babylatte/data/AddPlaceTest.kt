@@ -57,4 +57,37 @@ class AddPlaceTest {
         assertTrue(p.isPending)
         assertTrue(Filters.matches(p, setOf(Feature.CHANGING_TABLE.name, Filters.BABY_FRIENDLY)))
     }
+
+    @Test fun genericOrPreExistingNamesDoNotRemoveThePin() {
+        // A short generic name inside a longer one is not a match ("Cafe" next door used to remove "Cafe Lune").
+        val lune = pending("Cafe Lune", 55.6800, 12.5700)
+        assertTrue(Pending.resolved(listOf(lune), listOf(real("1", "Café", 55.68010, 12.5700))).isEmpty())
+
+        // A similarly named place that was already there when the user added theirs never resolves it...
+        val kop = pending("Lille Kop", 55.6800, 12.5700)
+        val nextDoor = real("2", "Café Lille Kop", 55.68020, 12.5700)
+        val existing = Pending.existingIds(listOf(nextDoor), kop.lat, kop.lon)
+        val mine = kop.copy(tags = kop.tags + (Place.TAG_EXISTING to existing))
+        assertEquals(setOf("node/2"), mine.existingNearby)
+        assertTrue(Pending.resolved(listOf(mine), listOf(nextDoor)).isEmpty())
+        // ...but a new one that mappers add later does, including a "Café" prefix.
+        val added = real("3", "Café Lille Kop", 55.68005, 12.5700)
+        assertEquals(setOf(mine.id), Pending.resolved(listOf(mine), listOf(nextDoor, added)))
+    }
+
+    @Test fun namesMatchRules() {
+        val n = Pending::normalize
+        assertTrue(Pending.namesMatch(n("Kaffebaren"), n("kaffebaren")))
+        assertTrue(Pending.namesMatch(n("Lille Kop"), n("Café Lille Kop")))
+        assertFalse(Pending.namesMatch(n("Cafe"), n("Cafe Lune")))           // too short
+        assertFalse(Pending.namesMatch(n("Bageri"), n("Lagkagehuset Bageri og Café"))) // small part of a long name
+        assertFalse(Pending.namesMatch("", n("x")))
+    }
+
+    @Test fun ownPendingPinsAreAlwaysShownFirst() {
+        val mine = pending("Lille Kop", 55.68, 12.57) // no facility info, so it fails every filter
+        assertFalse(Filters.matches(mine, setOf(Filters.BABY_FRIENDLY)))
+        val shown = Pending.withPending(listOf(real("1", "A", 55.68, 12.57)), listOf(mine))
+        assertEquals(listOf(mine.id, "node/1"), shown.map { it.id })
+    }
 }

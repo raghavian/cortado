@@ -98,8 +98,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<UiState> = combine(core, store.favorites, deps.offline.status, store.pending, store.reports) { s, favs, offline, pending, reports ->
         val resolved = Pending.resolved(pending, s.places)
         val shownPending = pending.filter { it.id !in resolved }
-        val all = s.places + shownPending
-        val visible = Filters.sort(all.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
+        val real = Filters.sort(s.places.filter { Filters.matches(it, s.filters) }, s.userLat, s.userLon)
+        val visible = Pending.withPending(real, shownPending)
         s.copy(favorites = favs, visible = visible, offline = offline, pending = shownPending, reports = reports)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UiState())
 
@@ -406,7 +406,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             reportState.value = try {
                 val note = deps.notes.createNote(place, report)
-                store.addPending(place.copy(tags = place.tags + (Place.TAG_NOTE_URL to note.url)))
+                // Remember what was already here, so an existing café with a similar name is never
+                // mistaken for the official version of this one (which would remove the pin).
+                val existing = Pending.existingIds(state.value.places, lat, lon)
+                store.addPending(place.copy(tags = place.tags + (Place.TAG_NOTE_URL to note.url) + (Place.TAG_EXISTING to existing)))
                 store.addReport(
                     SubmittedReport(
                         noteId = note.id, noteUrl = note.url, placeId = place.id, placeName = place.name,
