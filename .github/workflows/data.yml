@@ -2,8 +2,11 @@ name: Publish café data
 
 on:
   schedule:
-    # Daily, after Geofabrik publishes its nightly extract (usually by ~02:00 UTC).
+    # After Geofabrik publishes its nightly extract (usually by ~02:00 UTC). The second run is a
+    # safety net: it stops within seconds when the first one already published this extract.
+    # (GitHub often starts scheduled runs hours late.)
     - cron: "17 3 * * *"
+    - cron: "17 15 * * *"
   workflow_dispatch: {}
   push:
     branches: [main]
@@ -21,10 +24,11 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120 # only reached if it has to fall back to Overpass and retry
+    timeout-minutes: 60 # normally ~3 min; up to ~25 min while retrying Geofabrik
+    outputs:
+      skip: ${{ steps.snapshot.outputs.skip }}
     steps:
       - uses: actions/checkout@v7
-      # Never fails the job: without osmium the script falls back to Overpass.
       - name: Install osmium-tool
         run: |
           for i in 1 2 3; do
@@ -36,16 +40,20 @@ jobs:
             echo "::warning::apt could not install osmium-tool; trying conda-forge"
             "$CONDA/bin/conda" create -y -q -p "$RUNNER_TEMP/osm" -c conda-forge osmium-tool \
               && echo "$RUNNER_TEMP/osm/bin" >> "$GITHUB_PATH" \
-              || echo "::warning::osmium-tool unavailable; the snapshot will use Overpass this time"
+              || { echo "::error::Could not install osmium-tool (apt and conda-forge both failed). Nothing was published; the app keeps the previous data."; exit 1; }
           fi
       - name: Build snapshot from OpenStreetMap (Geofabrik extract)
-        run: python3 scripts/build_snapshot.py --out site
+        id: snapshot
+        # Scheduled runs skip the work if this extract is already published; pushes and manual runs always build.
+        run: python3 scripts/build_snapshot.py --out site ${{ github.event_name == 'schedule' && '--skip-if-current' || '' }}
       - uses: actions/upload-pages-artifact@v5
+        if: steps.snapshot.outputs.skip != 'true'
         with:
           path: site
 
   deploy:
     needs: build
+    if: needs.build.outputs.skip != 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -11,8 +11,12 @@ Output (default ./site):
                                    only download it about once a week
 
 Source: Geofabrik's daily country extract, filtered with osmium-tool. This puts no load on
-OpenStreetMap's own servers. If Geofabrik is unavailable or stale, it falls back to one
-Overpass query per region and reuses the previously published search index.
+OpenStreetMap's own servers. Geofabrik is retried for ~20 minutes; if it is still unavailable,
+or its extract is more than 3 days old, nothing is published and the app keeps the previous data.
+
+With --skip-if-current (scheduled runs) it first checks, in a few seconds, whether Geofabrik's
+current extract is already published, and stops if so. That makes a second daily run nearly free:
+it only does real work when the first one failed.
 
 Requires osmium-tool (`apt install osmium-tool`); otherwise only the standard library.
 """
@@ -28,18 +32,16 @@ import sys
 import tempfile
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 
 AMENITIES = ["cafe", "restaurant", "ice_cream", "fast_food"]
 GEOFABRIK = "https://download.geofabrik.de"
-OVERPASS_ENDPOINTS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-]
+# Pauses between attempts to reach Geofabrik (check + download + filter): ~21 minutes in all,
+# enough to ride out a server restart or a network blip on the runner.
+GEOFABRIK_WAITS_S = [60, 180, 420, 600]
 PUBLISHED = "https://raghavian.github.io/cortado/v1"
-USER_AGENT = "babylatte-snapshot/1.1 (+https://github.com/raghavian/cortado)"
+USER_AGENT = "babylatte-snapshot/1.2 (+https://github.com/raghavian/cortado)"
 ATTRIBUTION = "© OpenStreetMap contributors, ODbL 1.0. https://www.openstreetmap.org/copyright"
 MAX_EXTRACT_AGE_DAYS = 3
 SEARCH_MAX_AGE_DAYS = 7  # republish the previous search file until it is this old
@@ -78,9 +80,23 @@ def http_get(url: str, timeout: int = 60) -> bytes:
         return resp.read()
 
 
+class StaleExtract(RuntimeError):
+    """Geofabrik answered, but its extract is too old. Retrying for a few minutes won't help."""
+
+
+def geofabrik_urls(path: str):
+    """(state.txt, latest .osm.pbf) for a region path like "europe/denmark".
+
+    Geofabrik's layout since Nov 2026: europe/denmark/updates/state.txt and
+    europe/denmark/denmark-latest.osm.pbf (the old europe/denmark-latest.osm.pbf redirects).
+    """
+    name = path.rstrip("/").rsplit("/", 1)[-1]
+    return f"{GEOFABRIK}/{path}/updates/state.txt", f"{GEOFABRIK}/{path}/{name}-latest.osm.pbf"
+
+
 def extract_timestamp(path: str) -> datetime:
     """Time of the last OSM edit included in Geofabrik's current extract."""
-    state = http_get(f"{GEOFABRIK}/{path}-updates/state.txt").decode()
+    state = http_get(geofabrik_urls(path)[0]).decode()
     m = re.search(r"timestamp=(\S+)", state)
     if not m:
         raise RuntimeError("no timestamp in Geofabrik state.txt")
@@ -113,11 +129,11 @@ def features_from_geofabrik(path: str, work: str, pbf: str = None):
         age = (datetime.now(timezone.utc) - ts).total_seconds() / 86400
         log(f"  Geofabrik extract has OSM edits up to {ts.isoformat()} ({age:.1f} days old)")
         if age > MAX_EXTRACT_AGE_DAYS:
-            raise RuntimeError(f"Geofabrik extract is {age:.1f} days old")
+            raise StaleExtract(f"Geofabrik's extract is {age:.1f} days old (edits up to {ts.isoformat()})")
         osm_until = ts.isoformat(timespec="seconds")
         pbf = os.path.join(work, "extract.osm.pbf")
         started = time.time()
-        download(f"{GEOFABRIK}/{path}-latest.osm.pbf", pbf)
+        download(geofabrik_urls(path)[1], pbf)
         log(f"  downloaded {os.path.getsize(pbf) / 1e6:.0f} MB in {time.time() - started:.0f}s")
     filtered = os.path.join(work, "filtered.osm.pbf")
     osmium("tags-filter", pbf, "--overwrite", "-o", filtered,
@@ -186,43 +202,7 @@ def split_features(features):
 
 
 # ---------------------------------------------------------------------------------------------
-# Overpass fallback (cafés only)
-
-OVERPASS_WAITS_S = [60, 120, 240, 480, 900]
-
-
-def features_from_overpass(area_filter: str):
-    parts = "".join(f'nwr["amenity"="{a}"]["name"](area.a);' for a in AMENITIES)
-    query = f"[out:json][timeout:600];{area_filter}->.a;({parts});out center tags qt;"
-    attempts = len(OVERPASS_WAITS_S) + 1
-    last = None
-    for i in range(attempts):
-        endpoint = OVERPASS_ENDPOINTS[i % len(OVERPASS_ENDPOINTS)]
-        try:
-            data = urllib.parse.urlencode({"data": query}).encode()
-            req = urllib.request.Request(endpoint, data=data, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=660) as resp:
-                body = json.load(resp)
-            if body.get("remark") and "error" in body["remark"].lower():
-                raise RuntimeError(body["remark"])
-            stamp = (body.get("osm3s") or {}).get("timestamp_osm_base")
-            osm_until = datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) \
-                .isoformat(timespec="seconds") if stamp else None
-            cafes = []
-            for el in body["elements"]:
-                pos = el.get("center") or el
-                if "lat" in pos and "lon" in pos:
-                    cafes.append({"id": f'{el["type"]}/{el["id"]}', "tags": el.get("tags") or {},
-                                  "lat": pos["lat"], "lon": pos["lon"]})
-            return cafes, osm_until
-        except (urllib.error.URLError, TimeoutError, RuntimeError, json.JSONDecodeError) as e:
-            last = e
-            if i == attempts - 1:
-                break
-            log(f"  Overpass attempt {i + 1}/{attempts} on {endpoint} failed: {e}; retrying in {OVERPASS_WAITS_S[i]}s")
-            time.sleep(OVERPASS_WAITS_S[i])
-    raise RuntimeError(f"Overpass unavailable after {attempts} attempts (last error: {last})")
-
+# What's already published
 
 def published_index() -> dict:
     try:
@@ -350,26 +330,66 @@ def build_search(places: list, streets: list) -> list:
     return out
 
 
-def build_region(region: dict, work: str, source: str, pbf: str = None):
-    """Returns (cafés, search entries or None if unavailable, source used, time of the newest OSM edit)."""
-    if source in ("auto", "geofabrik") and region.get("geofabrik"):
+TRANSIENT = (OSError, subprocess.CalledProcessError)  # network errors (URLError is an OSError), bad downloads
+
+
+def build_region(region: dict, work: str, pbf: str = None):
+    """Returns (cafés, search entries, time of the newest OSM edit), retrying Geofabrik for ~20 minutes."""
+    attempts = 1 if pbf else len(GEOFABRIK_WAITS_S) + 1
+    for i in range(attempts):
         try:
             features, osm_until = features_from_geofabrik(region["geofabrik"], work, pbf)
             cafes, places, streets = split_features(features)
-            return cafes, build_search(places, streets), "geofabrik", osm_until
-        except (RuntimeError, OSError, subprocess.CalledProcessError, urllib.error.URLError) as e:
-            if source == "geofabrik":
+            return cafes, build_search(places, streets), osm_until
+        except StaleExtract:
+            raise
+        except TRANSIENT as e:
+            if i == attempts - 1:
+                raise RuntimeError(f"Geofabrik unavailable after {attempts} attempts (last error: {e})")
+            log(f"::warning::Geofabrik attempt {i + 1}/{attempts} for {region['name']} failed ({e}); "
+                f"retrying in {GEOFABRIK_WAITS_S[i] // 60} min")
+            time.sleep(GEOFABRIK_WAITS_S[i])
+
+
+def already_published(regions: list, published: dict) -> bool:
+    """True if every region's current Geofabrik extract is the one already published."""
+    for region in regions:
+        try:
+            current = with_retries(lambda: extract_timestamp(region["geofabrik"])).isoformat(timespec="seconds")
+        except TRANSIENT as e:
+            log(f"  couldn't check Geofabrik for {region['name']} ({e}); building anyway")
+            return False
+        have = (published.get(region["id"]) or {}).get("osmDataUntil")
+        log(f"  {region['name']}: Geofabrik has edits up to {current}; published: {have}")
+        if have != current:
+            return False
+    return True
+
+
+def with_retries(fn, waits=(30, 60, 120)):
+    for i in range(len(waits) + 1):
+        try:
+            return fn()
+        except TRANSIENT:
+            if i == len(waits):
                 raise
-            log(f"::warning::Geofabrik failed for {region['name']} ({e}); falling back to Overpass")
-    cafes, osm_until = features_from_overpass(region["area"])
-    return cafes, None, "overpass", osm_until
+            time.sleep(waits[i])
+
+
+def set_output(name: str, value: str) -> None:
+    """Passes a value to later workflow steps (no-op outside GitHub Actions)."""
+    path = os.environ.get("GITHUB_OUTPUT")
+    if path:
+        with open(path, "a") as f:
+            f.write(f"{name}={value}\n")
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="site")
     ap.add_argument("--regions", default=os.path.join(os.path.dirname(__file__), "regions.json"))
-    ap.add_argument("--source", choices=["auto", "geofabrik", "overpass"], default="auto")
+    ap.add_argument("--skip-if-current", action="store_true",
+                    help="stop early if Geofabrik's current extract is already published (scheduled runs)")
     ap.add_argument("--pbf", help="use this local .osm.pbf instead of downloading (testing, one region)")
     ap.add_argument("--fresh-search", action="store_true", help="rebuild the search files even if recent")
     args = ap.parse_args()
@@ -380,15 +400,22 @@ def main() -> None:
     generated = datetime.now(timezone.utc).isoformat(timespec="seconds")
     region_dir = os.path.join(args.out, "v1", "regions")
     os.makedirs(region_dir, exist_ok=True)
+    if shutil.which("osmium") is None:
+        raise SystemExit("::error::osmium-tool is not installed. Nothing was published; the app keeps the previous data.")
     published = published_index()
+    if args.skip_if_current and published and already_published(regions, published):
+        log("Already up to date: this Geofabrik extract is published. Nothing to do.")
+        set_output("skip", "true")
+        return
+    set_output("skip", "false")
     entries = []
     for region in regions:
         log(f"Building {region['name']}...")
         started = time.time()
         with tempfile.TemporaryDirectory() as work:
             try:
-                raw, search, used, osm_until = build_region(region, work, args.source, args.pbf)
-            except (RuntimeError, OSError, subprocess.CalledProcessError, urllib.error.URLError) as e:
+                raw, search, osm_until = build_region(region, work, args.pbf)
+            except (RuntimeError, OSError, subprocess.CalledProcessError) as e:
                 raise SystemExit(
                     f"::error::Could not get OpenStreetMap data for {region['name']} ({e}). Nothing was "
                     "published; the app keeps using the previous data until the next run succeeds."
@@ -403,7 +430,7 @@ def main() -> None:
         if len(places) < 100:
             raise SystemExit(f"::error::Only {len(places)} places for {region['id']}; refusing to publish a broken snapshot.")
         places.sort(key=lambda p: p["id"])
-        log(f"  {len(places)} places from {used} in {time.time() - started:.0f}s")
+        log(f"  {len(places)} places in {time.time() - started:.0f}s")
 
         payload = json.dumps(
             {"region": region["id"], "generated": generated, "attribution": ATTRIBUTION, "places": places},
@@ -418,33 +445,29 @@ def main() -> None:
             "url": f"regions/{region['id']}.json.gz",
             "bytes": os.path.getsize(path),
             "placeCount": len(places),
-            "source": used,
+            "source": "geofabrik",
             "osmDataUntil": osm_until,  # the newest OpenStreetMap edit included
             "generated": generated,
         }
         log(f"  wrote {os.path.getsize(path) / 1e6:.2f} MB")
 
-        # Search file: keep publishing last week's unless it's due (or this run couldn't build one).
+        # Search file: keep publishing last week's unless it's due, so phones download it ~weekly.
         search_name = f"{region['id']}.search.json.gz"
         prev = previous_search(published.get(region["id"]))
-        if prev and (search is None or (not args.fresh_search and age_days(prev[1]) < SEARCH_MAX_AGE_DAYS)):
+        if prev and not args.fresh_search and age_days(prev[1]) < SEARCH_MAX_AGE_DAYS:
             data, search_generated = prev
             log(f"  republished the search file from {search_generated}")
-        elif search is not None:
+        else:
             search_generated = generated
             data = gzip.compress(json.dumps(
                 {"region": region["id"], "generated": generated, "attribution": ATTRIBUTION, "search": search},
                 ensure_ascii=False, separators=(",", ":"),
             ).encode(), compresslevel=9, mtime=0)
             log(f"  wrote a new search file: {len(search)} entries, {len(data) / 1e6:.2f} MB")
-        else:
-            data = None
-            log("::warning::No search file this run; the app keeps its previous one")
-        if data is not None:
-            with open(os.path.join(region_dir, search_name), "wb") as f:
-                f.write(data)
-            entry.update({"searchUrl": f"regions/{search_name}", "searchBytes": len(data),
-                          "searchGenerated": search_generated})
+        with open(os.path.join(region_dir, search_name), "wb") as f:
+            f.write(data)
+        entry.update({"searchUrl": f"regions/{search_name}", "searchBytes": len(data),
+                      "searchGenerated": search_generated})
         entries.append(entry)
 
     index = {"version": 1, "generated": generated, "amenities": AMENITIES, "regions": entries,

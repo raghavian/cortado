@@ -42,10 +42,10 @@ app/src/main/java/app/babylatte/
 
 The app keeps its own copy of the data on the phone, so it works without signal and puts almost no load on OpenStreetMap's volunteer-run servers:
 
-1. **Daily snapshot.** `.github/workflows/data.yml` runs `scripts/build_snapshot.py` every night. It downloads [Geofabrik](https://download.geofabrik.de)'s daily extract for each region in `scripts/regions.json` (currently Denmark), filters it with `osmium-tool` and publishes to GitHub Pages:
+1. **Daily snapshot.** `.github/workflows/data.yml` runs `scripts/build_snapshot.py` twice a day (03:17 and 15:17 UTC; the second run stops within seconds if the first already published that day's extract). It downloads [Geofabrik](https://download.geofabrik.de)'s daily extract for each region in `scripts/regions.json` (currently Denmark), filters it with `osmium-tool` and publishes to GitHub Pages:
    `https://raghavian.github.io/cortado/v1/index.json` and `.../v1/regions/dk.json.gz`
    Each region file holds all cafés, restaurants, ice-cream and fast-food places (only the tags the app uses) plus an **offline search index** of towns, neighbourhoods and streets.
-   If Geofabrik is down or its extract is more than 3 days old, the script falls back to one Overpass query and reuses the previous search index. If that fails too, nothing is published and phones keep the previous data.
+   Geofabrik is retried for about 20 minutes. If it is still unavailable, or its extract is more than 3 days old, nothing is published and phones keep the previous data (there is deliberately no fallback to OpenStreetMap's own servers).
 2. **Offline on the phone.** On first launch the app downloads the whole region file, then searches and filters it locally: instant and with no signal needed. `SyncWorker` (WorkManager) re-checks once a day and only downloads again when a newer snapshot has been published.
 3. **Search.** Café names, towns, neighbourhoods and streets are searched offline. Nominatim is only asked when nothing offline matches, or when the user taps "Search worldwide".
 4. **Live Overpass fallback** for areas outside the downloaded regions (e.g. Malmö). The last 12 such areas are cached on the device.

@@ -1,11 +1,10 @@
 {
-  "_comment": "Regions published as offline snapshots. 'geofabrik' is the extract path on download.geofabrik.de (main source); 'area' is the Overpass area filter used as fallback. Add more countries here.",
+  "_comment": "Regions published as offline snapshots. 'geofabrik' is the region's path on download.geofabrik.de (e.g. europe/denmark; see https://download.geofabrik.de). Add more countries here.",
   "regions": [
     {
       "id": "dk",
       "name": "Denmark",
-      "geofabrik": "europe/denmark",
-      "area": "area[\"ISO3166-1\"=\"DK\"][admin_level=2]"
+      "geofabrik": "europe/denmark"
     }
   ]
 }
